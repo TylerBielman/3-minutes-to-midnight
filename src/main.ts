@@ -50,8 +50,8 @@ class PieceView extends Phaser.GameObjects.Container {
 class MainScene extends Phaser.Scene {
   structure:PieceView[]=[];
   draft:PieceView[]=[];
-  seams:Phaser.GameObjects.Graphics;
-  hint:Phaser.GameObjects.Text;
+  seams!:Phaser.GameObjects.Graphics;
+  hint!:Phaser.GameObjects.Text;
   active?:PieceView;
 
   constructor(){ super('main'); }
