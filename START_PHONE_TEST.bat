@@ -51,6 +51,13 @@ if not exist "node_modules\" (
 )
 
 echo.
+echo Finding an unused game port...
+set "GAME_PORT="
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$used=@(3000,5173); foreach($p in 5180..5299){ if($used -notcontains $p -and -not (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)){ $p; break } }"`) do set "GAME_PORT=%%P"
+if not defined GAME_PORT set "GAME_PORT=5180"
+echo Using port !GAME_PORT! for 3 Minutes to Midnight.
+
+echo.
 echo Finding this PC's Wi-Fi address...
 set "PHONE_IP="
 for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$r=Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue ^| Where-Object {$_.NextHop -ne '0.0.0.0'} ^| Sort-Object RouteMetric ^| Select-Object -First 1; if($r){Get-NetIPAddress -InterfaceIndex $r.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '169.254*'} ^| Select-Object -First 1 -ExpandProperty IPAddress}"`) do set "PHONE_IP=%%I"
@@ -64,7 +71,7 @@ echo ============================================================
 if defined PHONE_IP (
   echo   ON YOUR PHONE, OPEN:
   echo.
-  echo       http://!PHONE_IP!:5173
+  echo       http://!PHONE_IP!:!GAME_PORT!
   echo.
 ) else (
   echo   I could not automatically find your Wi-Fi IP address.
@@ -76,12 +83,12 @@ echo Make sure the phone is on the same Wi-Fi as this PC.
 echo If Windows Firewall asks, choose Allow for PRIVATE networks.
 echo.
 echo Opening the prototype on this PC too...
-start "" "http://localhost:5173"
+start "" "http://localhost:!GAME_PORT!"
 echo.
 echo Starting server now. KEEP THIS WINDOW OPEN while testing.
 echo To stop it later, close this window or press Ctrl+C.
 echo.
-call npm run dev
+call npm run dev -- --port !GAME_PORT! --strictPort
 if errorlevel 1 goto RUN_FAIL
 exit /b 0
 
