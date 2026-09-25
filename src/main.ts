@@ -12,7 +12,7 @@ type DockState={def:DockDef, owner:PieceView, used:boolean, glow:boolean};
 
 class PieceView extends Phaser.GameObjects.Container {
   def:PieceDef;
-  body:Phaser.GameObjects.Graphics;
+  bodyGraphics:Phaser.GameObjects.Graphics;
   dockGraphics:Phaser.GameObjects.Graphics;
   label?:Phaser.GameObjects.Text;
   docks:DockState[]=[];
@@ -23,7 +23,7 @@ class PieceView extends Phaser.GameObjects.Container {
 
   constructor(scene:Phaser.Scene, def:PieceDef, x:number,y:number){
     super(scene,x,y); this.def=def;
-    this.body=scene.add.graphics(); this.add(this.body);
+    this.bodyGraphics=scene.add.graphics(); this.add(this.bodyGraphics);
     this.dockGraphics=scene.add.graphics(); this.add(this.dockGraphics);
     if(def.value!=null){ this.label=scene.add.text(0,0,String(def.value),{fontFamily:'Arial',fontSize:'26px',color:'#ffffff',fontStyle:'bold'}).setOrigin(.5); this.add(this.label); }
     this.docks=def.docks.map(d=>({def:d,owner:this,used:false,glow:false}));
@@ -33,8 +33,8 @@ class PieceView extends Phaser.GameObjects.Container {
   }
   redraw(){
     const fill=(COLORS as any)[this.def.color];
-    this.body.clear().fillStyle(fill,1).lineStyle(2,0x15171b,1);
-    this.body.beginPath(); const p=this.def.polygon; this.body.moveTo(p[0].x,p[0].y); for(let i=1;i<p.length;i++)this.body.lineTo(p[i].x,p[i].y); this.body.closePath().fillPath().strokePath();
+    this.bodyGraphics.clear().fillStyle(fill,1).lineStyle(2,0x15171b,1);
+    this.bodyGraphics.beginPath(); const p=this.def.polygon; this.bodyGraphics.moveTo(p[0].x,p[0].y); for(let i=1;i<p.length;i++)this.bodyGraphics.lineTo(p[i].x,p[i].y); this.bodyGraphics.closePath().fillPath().strokePath();
     this.dockGraphics.clear();
     for(const d of this.docks){
       if(d.used) continue;
