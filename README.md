@@ -29,12 +29,23 @@ This repo intentionally starts smaller than the game.
 
 If the interaction is not fun, do not add those systems.
 
-## Run locally
+## Phone test on Windows — easiest path
+Double-click `START_PHONE_TEST.bat`.
+
+The launcher will:
+- install Node.js LTS with Windows Package Manager if Node is missing,
+- install the prototype dependencies on first run,
+- start the local Vite server,
+- open the prototype on the PC,
+- print the exact `http://...:5173` address to open on a phone connected to the same Wi-Fi.
+
+If Windows Firewall asks, allow access on **Private networks**.
+
+## Manual local run
 ```bash
 npm install
 npm run dev
 ```
-Open the LAN URL Vite prints on a phone connected to the same network, or deploy to any HTTPS static host.
 
 ## Design references
 See `docs/reference/`.
@@ -42,9 +53,10 @@ See `docs/reference/`.
 - `UI_Wireframe_0.5_Validated.png` — topology/UI grammar
 - `Geometry_Exploration_0.1.png` — shape-language target
 
+Also read:
+- `AGENTS.md`
+- `CODEX_BUILD_0_1.md`
+- `docs/DESIGN_AND_TECHNICAL_SPEC.md`
+
 ## Agent guardrail
 Do not "improve" the scope of Build 0.1 without an explicit design request. Optimize for touch feel and instrumentation, not feature count.
-
-## Easiest phone deployment
-A GitHub Pages workflow is included at `.github/workflows/deploy-pages.yml`.
-After the repo is pushed to GitHub, enable **Settings → Pages → Source: GitHub Actions** once. Every push to `main` will then publish a phone-testable HTTPS build.
