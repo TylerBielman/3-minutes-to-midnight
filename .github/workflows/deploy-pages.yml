@@ -32,6 +32,9 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+        env:
+          # Gametronyx feedback reports name the exact build.
+          VITE_BUILD_SHA: ${{ github.sha }}
 
       - name: Pick destination folder
         id: dest

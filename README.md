@@ -15,6 +15,10 @@ Unzip the **3MTM_JERBOA_P1.zip** package into a fresh folder. Double-click **STA
 
 Connect the phone to the PC hotspot, then open the address printed in the launcher. Keep the launcher window open. A local PC preview opens after the server is ready. Actual hotspot/firewall connectivity depends on the devices; this package does not change security settings.
 
+## Gametronyx (launcher and feedback)
+
+Players launched from **gametronyx.com** arrive signed in: the site passes a one-time code in the URL fragment, which the game trades for a session token. After every 3rd completed run (the Ring caught the jerboa), a short "How was it?" popup asks for feedback. It is posted as a GitHub issue in this repo under the player's Gametronyx username. Skip closes it. Opening the game directly (no Gametronyx session) never shows the popup. See `src/gtx.ts` and `docs/DECISIONS.md` (Gametronyx integration).
+
 ## Controls
 
 - Two draft slots by default (1–3 in Tune). Tap a draft piece to rotate 90 degrees.

@@ -1,1 +1,1 @@
-{"extends":"./tsconfig.json","compilerOptions":{"noEmit":false,"outDir":".test-build"},"include":["src/runway.ts","src/game.ts","src/input.ts","src/stats.ts"]}
+{"extends":"./tsconfig.json","compilerOptions":{"noEmit":false,"outDir":".test-build"},"include":["src/runway.ts","src/game.ts","src/input.ts","src/stats.ts","src/gtx.ts"]}
