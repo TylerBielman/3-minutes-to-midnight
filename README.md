@@ -17,7 +17,7 @@ Connect the phone to the PC hotspot, then open the address printed in the launch
 
 ## Controls
 
-- Tap a draft piece to rotate 90 degrees.
+- Two draft slots by default (1–3 in Tune). Tap a draft piece to rotate 90 degrees.
 - Drag up to connect it. Orientation is locked while held.
 - Invalid release returns it to the same slot.
 - Swipe down from the draft row to discard/reroll (unlocks after your first placement).

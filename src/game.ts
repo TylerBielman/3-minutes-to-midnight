@@ -1,6 +1,6 @@
 import {SHAPES,key,same,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
-export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number};
-export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:6,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000};
+export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number,slots:number};
+export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:10,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000,slots:2};
 export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phases: share of the run and speed relative to the average needed to close on time.
   // Sum of fraction×speed must be 1 so the Ring closes exactly at the time limit. 180 s run → 60 / 80 / 40 s.
   phaseFractions:[1/3,4/9,2/9],phaseSpeeds:[.5,.875,2],nodeRadius:.32,previewLimit:64,simulationStep:16,
@@ -15,7 +15,9 @@ export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phase
   // Ring heartbeat period per phase (ms). Faster beats signal rising tension.
   ringPulseMs:[1400,900,550],
   // Endgame: the runway cap shrinks with the Ring's area (cells) so old road clears faster late in the run.
-  endgameRoadDensity:.3,minRoadLimit:6};
+  endgameRoadDensity:.3,minRoadLimit:6,
+  // Point-node target shrinks in proportion to the Ring's radius, never below this.
+  minNodes:2};
 export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'boost'|'freeze',boosted:boolean};
 export type Draft={shapeId:string,turns:number};
 type Hop={from:Cell,to:Cell,elapsed:number,duration:number};
@@ -65,6 +67,7 @@ export class Game {
     const s=this.settings;
     s.grid=Math.max(9,Math.min(31,Math.round(s.grid)));if(s.grid%2===0)s.grid++;
     s.duration=Math.max(15,Math.min(600,s.duration));s.hopMs=Math.max(120,Math.min(2000,s.hopMs));s.nodeCount=Math.max(1,Math.min(20,Math.round(s.nodeCount)));
+    s.slots=Number.isFinite(s.slots)?Math.max(1,Math.min(3,Math.round(s.slots))):DEFAULTS.slots;
     s.roadLimit=Number.isFinite(s.roadLimit)?Math.max(0,Math.min(961,Math.round(s.roadLimit))):25;
     s.hitRadius=Number.isFinite(s.hitRadius)?Math.max(0,Math.min(.5,s.hitRadius)):.10;
     s.boostSpeed=Number.isFinite(s.boostSpeed)?Math.max(1,Math.min(3,s.boostSpeed)):DEFAULTS.boostSpeed;
@@ -74,7 +77,7 @@ export class Game {
     this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};
     this.board.add(key(this.at));this.visited.add(key(this.at));
     this.pieces.push({cells:[{...this.at}],shapeId:'Start'});
-    this.draft=[this.draw(),this.draw(),this.draw()];this.refillNodes();
+    this.draft=Array.from({length:s.slots},()=>this.draw());this.refillNodes();
   }
   get radius(){return ringRadius(this.ringMs,this.settings);}
   get frozen(){return this.elapsed<this.freezeUntil;}
@@ -83,6 +86,11 @@ export class Game {
   /** Pieces longer than the Ring is wide are not dealt. */
   get maxPieceLength(){return Math.max(1,Math.floor(this.radius*2));}
   /** Soft runway cap: the Tune setting, lowered in the endgame as the Ring's area shrinks. 0 = unlimited. */
+  /** Point nodes kept on the board: the Tune count at full size, shrinking with the Ring's radius. */
+  get nodeTarget(){
+    const full=this.settings.grid/2-.25;
+    return Math.min(this.settings.nodeCount,Math.max(TUNING.minNodes,Math.ceil(this.settings.nodeCount*this.radius/full)));
+  }
   get roadLimit(){
     if(!this.settings.roadLimit)return 0;
     const byArea=Math.floor(Math.PI*this.radius*this.radius*TUNING.endgameRoadDensity);
@@ -169,7 +177,7 @@ export class Game {
       if(this.settings.spawn==='uncovered'&&this.board.has(k))continue;
       if(Math.hypot(x-center,y-center)+TUNING.nodeRadius<this.radius)eligible.push(p);
     }
-    while(this.nodes.size<this.settings.nodeCount&&eligible.length){
+    while(this.nodes.size<this.nodeTarget&&eligible.length){
       let r=randomStep(this.nodeRng);this.nodeRng=r.state;const [p]=eligible.splice(Math.floor(r.value*eligible.length),1);
       r=randomStep(this.nodeRng);this.nodeRng=r.state;
       // The opening board guarantees a couple of 5s to pull the player outward.

@@ -18,6 +18,8 @@ A draft entry contains shape ID and quarter turns. Cells are normalized after ro
 
 ## Endgame limits
 
+The point-node target is `min(nodeCount, max(minNodes, ceil(nodeCount·r/r0)))`: it scales with the Ring's radius and only limits refills.
+
 The effective runway cap is `min(roadLimit, max(minRoadLimit, floor(π·r²·endgameRoadDensity)))`; it only bites late in the run. Retirement prefers pieces entirely outside the Ring, then the oldest. Draws only offer shapes whose longest side is at most `floor(2r)`, and `replaceOutgrown` swaps draft pieces that no longer fit, skipping the piece being dragged.
 
 ## Retirement contract

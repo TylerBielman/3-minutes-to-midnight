@@ -6,14 +6,15 @@ import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML=`<main class="game-shell">
-  <div class="tools"><span>P1 · PLAYTEST 5</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
+  <div class="tools"><span>P1 · PLAYTEST 6</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
   <canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
     <label>Run length<select id="duration"><option value="60">1 minute</option><option value="120">2 minutes</option><option value="180">3 minutes</option></select></label>
     <label>Board size<select id="grid"><option value="15">15 × 15</option><option value="19">19 × 19</option><option value="23">23 × 23</option></select></label>
     <label>Hop interval<select id="hop"><option value="300">Fast · 0.30 seconds</option><option value="450">Default · 0.45 seconds</option><option value="650">Slow · 0.65 seconds</option></select></label>
-    <label>Active point nodes<input id="nodes" type="number" min="1" max="20"></label>
+    <label>Draft slots<select id="slots"><option value="1">1</option><option value="2">2 · default</option><option value="3">3</option></select></label>
+    <label>Point nodes at start (fewer as the Ring closes)<input id="nodes" type="number" min="1" max="20"></label>
     <label>Runway square limit (0 = unlimited)<input id="limit" type="number" min="0" max="961"></label>
     <label>Ring hit radius (cells)<select id="hit"><option value="0.1">Forgiving · 0.10</option><option value="0.24">Original · 0.24</option><option value="0">Center only · 0</option></select></label>
     <label>x2 speed multiplier<input id="boost-speed" type="number" min="1" max="3" step="0.1"></label>
@@ -30,7 +31,7 @@ const dialog=document.querySelector<HTMLDialogElement>('#settings')!;
 const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
 const query=new URLSearchParams(location.search);
 const numeric=(name:string,fallback:number)=>{const value=Number(query.get(name));return query.has(name)&&Number.isFinite(value)?value:fallback;};
-let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',6),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000,freezeMs:numeric('freezeSec',DEFAULTS.freezeMs/1000)*1000};
+let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',DEFAULTS.nodeCount),slots:numeric('slots',DEFAULTS.slots),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000,freezeMs:numeric('freezeSec',DEFAULTS.freezeMs/1000)*1000};
 let game=new Game(settings),debug=query.has('debug');
 const historyDialog=document.querySelector<HTMLDialogElement>('#history')!;
 // Phone testing uses HTTP over LAN, where randomUUID may be unavailable.
@@ -64,7 +65,9 @@ document.querySelector('#export')!.addEventListener('click',()=>{
   const link=document.createElement('a');link.href=url;link.download=`3mtm-runs-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 });
 window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupted'));
-const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528,SLOTS=[66,195,324];
+const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528;
+// Slot centers, spread evenly for 1-3 draft slots.
+const slotX=(i:number)=>195+(i-(game.draft.length-1)/2)*129;
 const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff',freeze:'#5aa9ff'};
 // Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
 const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500};
@@ -103,7 +106,7 @@ canvas.addEventListener('pointerdown',event=>{
   if(game.over){if(p.y>240&&p.y<385)restart({...settings,seed:Math.floor(Math.random()*0xffffffff)});return;}
   const actor=screen(game.position);
   if(Math.hypot(p.x-actor.x,p.y-actor.y)<25){game.reverse();announce(game.running?'Turning back after this hop.':'Connect your first piece to begin.',color.route);return;}
-  const slot=SLOTS.findIndex(x=>Math.abs(p.x-x)<59&&Math.abs(p.y-DRAFT_Y)<51);
+  const slot=game.draft.findIndex((_,i)=>Math.abs(p.x-slotX(i))<59&&Math.abs(p.y-DRAFT_Y)<51);
   if(slot<0)return;gesture={id:event.pointerId,slot,start:p,now:p,mode:'pending'};canvas.setPointerCapture(event.pointerId);
 });
 canvas.addEventListener('pointermove',event=>{
@@ -144,13 +147,13 @@ function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted'
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
 document.querySelector('#tune')!.addEventListener('click',()=>{
   cancel();input('duration').value=String(game.settings.duration);input('grid').value=String(game.settings.grid);input('hop').value=String(game.settings.hopMs);
-  input('nodes').value=String(game.settings.nodeCount);input('seed').value=String(game.settings.seed);input('debug').checked=debug;dialog.showModal();
+  input('nodes').value=String(game.settings.nodeCount);input('slots').value=String(game.settings.slots);input('seed').value=String(game.settings.seed);input('debug').checked=debug;dialog.showModal();
   input('limit').value=String(game.settings.roadLimit);input('hit').value=String(game.settings.hitRadius);
   input('boost-speed').value=String(game.settings.boostSpeed);input('boost-sec').value=String(game.settings.boostMs/1000);input('freeze-sec').value=String(game.settings.freezeMs/1000);
 });
 document.querySelector('#apply')!.addEventListener('click',event=>{
   event.preventDefault();if(!dialog.querySelector('form')!.reportValidity())return;
-  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000,freezeMs:Number(input('freeze-sec').value)*1000});dialog.close();
+  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),slots:Number(input('slots').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000,freezeMs:Number(input('freeze-sec').value)*1000});dialog.close();
 });
 function draw(now:number){
   const dpr=Math.min(devicePixelRatio||1,3);if(canvas.width!==W*dpr){canvas.width=W*dpr;canvas.height=H*dpr;}
@@ -231,13 +234,13 @@ function draw(now:number){
   text('TAP TO ROTATE · DRAG UP · SWIPE DOWN ↓ TO DISCARD',195,469,10,color.muted,'center');
   game.draft.forEach((draft,i)=>{
     const active=gesture?.slot===i,flash=flashSlot===i&&now<flashUntil;
-    roundRect(SLOTS[i]-59,483,118,88,10,'#182630',flash?color.red:active&&gesture?.mode==='discard'?color.points:active?color.route:'#324652');
+    roundRect(slotX(i)-59,483,118,88,10,'#182630',flash?color.red:active&&gesture?.mode==='discard'?color.points:active?color.route:'#324652');
     if(!(active&&gesture?.mode==='drag')){
       const cells=game.cells(i),width=Math.max(...cells.map(p=>p.x))+1,height=Math.max(...cells.map(p=>p.y))+1;
-      const unit=Math.min(scale(),96/width,54/height),left=SLOTS[i]-width*unit/2,top=DRAFT_Y-8-height*unit/2;
+      const unit=Math.min(scale(),96/width,54/height),left=slotX(i)-width*unit/2,top=DRAFT_Y-8-height*unit/2;
       cells.forEach(c=>{ctx.fillStyle='#8eabb9';ctx.fillRect(left+c.x*unit+.7,top+c.y*unit+.7,unit-1.4,unit-1.4);});
     }
-    text(active&&gesture?.mode==='discard'?(game.running?'DISCARD ↓':'LOCKED'):active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,SLOTS[i],558,11,color.muted,'center');
+    text(active&&gesture?.mode==='discard'?(game.running?'DISCARD ↓':'LOCKED'):active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,slotX(i),558,11,color.muted,'center');
   });
   text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
   if(game.over){

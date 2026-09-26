@@ -14,7 +14,7 @@ test('discard is locked until the first placement starts the clock',()=>{
   dot(g,10,9);assert.equal(g.discard(1),true);assert.equal(g.discards,1);
 });
 test('starting board holds at least two 5s (guaranteed) among the opening nodes',()=>{
-  for(let seed=1;seed<40;seed++){const g=new Game({seed});assert.equal([...g.nodes.values()].filter(v=>v===5).length>=2,true);assert.equal(g.nodes.size,6);}
+  for(let seed=1;seed<40;seed++){const g=new Game({seed});assert.equal([...g.nodes.values()].filter(v=>v===5).length>=2,true);assert.equal(g.nodes.size,DEFAULTS.nodeCount);}
   assert.equal([...new Game({seed:7,nodeCount:1}).nodes.values()][0],5);
 });
 test('node values span 1-5; each phase shifts the mix toward 5s',()=>{

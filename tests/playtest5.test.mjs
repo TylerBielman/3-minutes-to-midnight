@@ -54,3 +54,16 @@ test('large pool adds V5, T5 and Y as the chart shows them',()=>{
   assert.deepEqual(SHAPES.filter(s=>s.group==='large').map(s=>s.id),['Long','Cup','Cross','V5','T5','Y']);
   assert.equal(shapeLength('V5'),3);assert.equal(shapeLength('T5'),3);assert.equal(shapeLength('Y'),4);
 });
+test('draft slots are tunable 1-3 and default to 2',()=>{
+  assert.equal(DEFAULTS.slots,2);assert.equal(new Game().draft.length,2);
+  assert.equal(new Game({slots:1}).draft.length,1);assert.equal(new Game({slots:3}).draft.length,3);
+  assert.equal(new Game({slots:9}).draft.length,3);assert.equal(new Game({slots:0}).draft.length,1);
+  const g=new Game({slots:1});g.draft[0]={shapeId:'Dot',turns:0};assert.equal(g.place(0,{x:10,y:9}),undefined);assert.equal(g.draft.length,1);
+});
+test('ten point nodes at the start, fewer as the Ring closes, never below the minimum',()=>{
+  assert.equal(DEFAULTS.nodeCount,10);const g=new Game();assert.equal(g.nodes.size,10);assert.equal(g.nodeTarget,10);
+  g.ringMs=140000;assert.ok(g.nodeTarget>=4&&g.nodeTarget<=5,`phase 3 start ${g.nodeTarget}`);
+  g.ringMs=178000;assert.equal(g.nodeTarget,TUNING.minNodes);
+  // Existing nodes are not deleted early; the pool just stops refilling above the target.
+  const h=new Game();h.running=true;h.board=new Set(['9,9','10,9']);h.ringMs=140000;h.nodes.clear();h.advance(1);assert.equal(h.nodes.size,h.nodeTarget);
+});

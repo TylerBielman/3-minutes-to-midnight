@@ -150,3 +150,19 @@ Tyler: the endgame had turned into mostly reversing the jerboa. Keep tile placem
 | U34 | Group probabilities become 65% common / 15% small / 20% large (was 70/15/15). Each large shape is now ~3.3% per deal (was 5%); each common ~10.8% (was 11.7%). Supersedes U19's weights. |
 
 Not added (and why): O4 and P contain a 2×2 block, which would form a tiny loop (U18); Z4 was replaced in Playtest 2; I5 duplicates I and Long; L5, Z5 and F were left for later.
+
+## Playtest 6 — 2026-09-26
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| U35 | Number of draft slots is tunable from 1 to 3; default 2 (was a fixed 3). |
+| U36 | Default point nodes 10 (was 6), fewer in the endgame. |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P6-01 | The node target shrinks in proportion to the Ring's radius: 10 at the start, about 8 at the end of phase 1, 5 at the start of phase 3, never below 2. Nodes already on the board are not deleted early; the pool just stops refilling above the target. | Keeps node density per area of play roughly steady instead of crowding the small late Ring. `Game.nodeTarget`, `TUNING.minNodes`. |
+| P6-02 | Slots are centered and spaced 129 px apart whatever the count; each keeps its tap target size. Tune "Draft slots" and URL `slots`. | `slotX` in `src/main.ts`. |
