@@ -48,6 +48,10 @@ The engine has a `spawn: 'uncovered'` option as a future experimental seam, but 
 
 At most one x2 node exists. It spawns on a random eligible cell once the run clock passes `boostFirstMs`, and again `boostRespawnMs` after the previous one is collected or overtaken by the Ring, never during an active boost. Landing on it sets `boostUntil = elapsed + boostMs`. Each hop stores its own duration, fixed when the hop begins: `hopMs / boostSpeed` while boosted. Point collections while boosted score double. `pickups` exposes a short sequence-numbered log so the renderer can play bursts without reading the event timeline.
 
+## Freeze powerup
+
+The Ring runs on its own clock, `ringMs`, which advances with play except while `elapsed < freezeUntil`. Radius, phase, node value phase, heartbeat and the countdown all read `ringMs`; hops, boosts and spawn timers read `elapsed`. Landing on the freeze node sets `freezeUntil = elapsed + freezeMs`. It spawns like x2 (`freezeFirstMs`, `freezeRespawnMs`, never while frozen). Both powerups spawn at least `powerupRingMargin` cells inside the Ring.
+
 ## Ring pulse
 
 `ringBeats(elapsed)` integrates beats across phases with the periods in `TUNING.ringPulseMs`, so the pulse stays continuous and simply quickens at each phase boundary. The renderer adds the phase-change surge. The pulse is presentation only.

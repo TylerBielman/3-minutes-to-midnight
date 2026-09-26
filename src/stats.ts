@@ -1,12 +1,12 @@
 import {type Game} from './game.js';
-export const BUILD='P1-playtest-3';
+export const BUILD='P1-playtest-4';
 export const HISTORY_KEY='3mtm-runs-v1';
 export type Outcome='active'|'caught'|'restarted'|'interrupted';
 export function runReport(game:Game,id:string,startedAt:string,outcome:Outcome){
   return {schema:1,build:BUILD,id,startedAt,savedAt:new Date().toISOString(),outcome,
     settings:{...game.settings},score:game.score,nodes:game.collected,seconds:Math.round(game.elapsed)/1000,
     placements:game.placements,rotations:game.rotations,discards:game.discards,invalidDrops:game.invalidDrops,
-    reversals:game.reversals,hops:game.hops,boosts:game.boosts,nearMisses:game.nearMisses,minClearance:game.minClearance,
+    reversals:game.reversals,hops:game.hops,boosts:game.boosts,freezes:game.freezes,ringSeconds:Math.round(game.ringMs)/1000,nearMisses:game.nearMisses,minClearance:game.minClearance,
     squares:game.board.size,peakSquares:game.peakSquares,removedPieces:game.removedPieces,removedSquares:game.removedSquares,
     board:[...game.board],nodesRemaining:[...game.nodes],position:game.position,events:[...game.events],droppedEvents:game.droppedEvents};
 }

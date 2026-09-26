@@ -22,7 +22,9 @@ Connect the phone to the PC hotspot, then open the address printed in the launch
 - Invalid release returns it to the same slot.
 - Swipe down from the draft row to discard/reroll (unlocks after your first placement).
 - Tap the jerboa to reverse after his current hop.
-- Violet x2 node: he hops faster (1.4×) and points count double for 5 seconds. Both are adjustable in Tune.
+- Violet x2 node: he hops faster (1.4×) and points count double for 7 seconds.
+- Blue ❄ freeze node: the Ring and the countdown stop for 6 seconds; the Ring glows blue and blinks just before it thaws.
+- Powerup speed and durations are adjustable in Tune.
 - The Ring's pulse quickens at every phase change. Point values rise toward 5 as phases advance.
 - Cyan road and arrows show his plan. Gold numbers are points.
 - New run restarts; Tune changes duration, board size, hop speed, node count, seed, runway limit, Ring hit radius and debug grid.

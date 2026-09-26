@@ -47,3 +47,26 @@ test('x2 never spawns while boosted and respawns after collection',()=>{
   g.advance(19000);assert.equal(g.boostNode,undefined);
   g.advance(1500);assert.equal(g.boosted,false);assert.ok(g.boostNode,'respawn delay already elapsed');
 });
+test('freeze stops the Ring and its clock for its duration, then the Ring resumes',()=>{
+  const g=lineGame({freezeMs:3000});g.freezeNode={x:10,y:9};
+  g.advance(g.settings.hopMs);assert.equal(g.frozen,true);assert.equal(g.freezes,1);assert.equal(g.freezeNode,undefined);
+  const radius=g.radius,ring=g.ringMs,phase=g.phase;g.advance(2900);
+  assert.equal(g.radius,radius);assert.equal(g.ringMs,ring);assert.equal(g.phase,phase);
+  g.advance(200);assert.equal(g.frozen,false);assert.ok(g.radius<radius);assert.ok(g.ringMs>ring);
+  assert.ok(Math.abs(g.elapsed-g.ringMs-3000)<=TUNING.simulationStep,'ring clock lags real time by the freeze');
+});
+test('freeze spawns after its opening delay, not while frozen, and never on top of x2',()=>{
+  const g=lineGame({freezeMs:30000});g.advance(TUNING.freezeFirstMs+50);assert.ok(g.freezeNode);
+  if(g.boostNode)assert.notDeepEqual(g.boostNode,g.freezeNode);
+  const h=lineGame({freezeMs:30000});h.freezeNode={x:10,y:9};h.advance(h.settings.hopMs);
+  h.advance(TUNING.freezeRespawnMs+100);assert.equal(h.freezeNode,undefined,'still frozen, no respawn');
+});
+test('defaults: x2 lasts 7 seconds and freeze lasts 6 seconds',()=>{
+  assert.equal(DEFAULTS.boostMs,7000);assert.equal(DEFAULTS.freezeMs,6000);
+});
+test('powerups spawn safely inside the Ring, not on its edge',()=>{
+  const safe=(g,p)=>{const c=(g.settings.grid-1)/2;return Math.hypot(p.x-c,p.y-c)+TUNING.nodeRadius<g.radius-TUNING.powerupRingMargin+.05;};
+  for(let seed=1;seed<30;seed++){const g=new Game({seed,duration:60});g.board=new Set(['9,9','10,9']);g.running=true;
+    g.advance(TUNING.boostFirstMs+20);assert.ok(g.boostNode&&safe(g,g.boostNode),`x2 seed ${seed}`);
+    g.advance(TUNING.freezeFirstMs-TUNING.boostFirstMs);assert.ok(g.freezeNode&&safe(g,g.freezeNode),`freeze seed ${seed}`);}
+});

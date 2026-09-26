@@ -99,3 +99,23 @@ Tyler requested stronger Ring tension, pickup feedback, phase-weighted point val
 | P3-05 | x2 color violet `#c77dff`. At most one x2 on the board; the first appears 10 s into the run and the next 15 s after the previous one is collected or lost to the Ring. It never spawns during an active boost and is extra to the point-node count | `TUNING.boostFirstMs`, `boostRespawnMs`. Spawns on the same random eligible cells as nodes. |
 | P3-06 | Speed-up applies from the next hop after landing on x2; a hop already in flight when the boost ends finishes at boosted speed. Boost time is game time. While boosted, nodes show their doubled value in violet (Tyler, Playtest 3 follow-up) | Avoids mid-hop position jumps. Tune exposes speed multiplier and duration; URL `boost` and `boostSec`. |
 | P3-07 | A locked swipe-down flashes the slot red and shows "Discards unlock after your first placement". Rotation stays free before the start | `Game.discard` returns false before the run starts. |
+
+## Playtest 4 — 2026-09-26
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| U27 | x2 lasts 2 seconds longer: default 7 s (still tunable). |
+| U28 | Remove the "3 MINUTES TO MIDNIGHT" title from the game screen. |
+| U29 | Freeze powerup: stops the Ring for a tunable duration (default 6 s); the Ring turns blue while frozen. |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P4-01 | Freeze pauses the Ring clock: radius, phase, heartbeat and the on-screen countdown all stop, so the run gets longer by the frozen time. The jerboa, x2 timer and draft keep running | Keeps "time to midnight" consistent with the Ring. Run reports keep real seconds and add `ringSeconds`. `Game.ringMs`. |
+| P4-02 | Freeze node is blue `#5aa9ff` with a ❄ glyph. First appears 25 s in, then 25 s after the previous is collected or lost; never while frozen; can coexist with x2 | `TUNING.freezeFirstMs`, `freezeRespawnMs`. |
+| P4-03 | Frozen Ring is a steady blue glow with no heartbeat, and blinks orange/blue for its last 1.5 s as a thaw warning. Countdown turns blue with a ❄ timer bar under it | `FX.thawWarnMs` in `src/main.ts`. |
+| P4-04 | Powerups (x2 and freeze) spawn at least 2 cells inside the Ring. Before this, x2 could spawn on the edge and be swallowed about a second later | `TUNING.powerupRingMargin`. Point nodes unchanged. |
+| P4-05 | The browser tab title and the repository name are unchanged | Tyler asked only for the on-screen title; a new name is his call. |

@@ -52,7 +52,7 @@ test('unlimited mode retains all road and illegal placement never triggers retir
 });
 test('forgiving footprint survives a corner which catches original footprint, but still captures at contact',()=>{
   const a=new Game({hitRadius:.1}),b=new Game({hitRadius:.24});
-  for(const g of [a,b]){g.at={x:15,y:15};g.board=new Set([key(g.at)]);g.running=true;g.elapsed=22000;g.advance(1);}
+  for(const g of [a,b]){g.at={x:15,y:15};g.board=new Set([key(g.at)]);g.running=true;g.elapsed=g.ringMs=22000;g.advance(1);}
   assert.equal(a.over,false);assert.equal(b.over,true);a.advance(10000);assert.equal(a.over,true);
 });
 test('run reports preserve actionable counters, events and settings without mutating simulation',()=>{

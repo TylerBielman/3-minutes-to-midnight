@@ -6,7 +6,7 @@ import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML=`<main class="game-shell">
-  <div class="tools"><span>P1 · PLAYTEST 3</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
+  <div class="tools"><span>P1 · PLAYTEST 4</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
   <canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
@@ -18,6 +18,7 @@ app.innerHTML=`<main class="game-shell">
     <label>Ring hit radius (cells)<select id="hit"><option value="0.1">Forgiving · 0.10</option><option value="0.24">Original · 0.24</option><option value="0">Center only · 0</option></select></label>
     <label>x2 speed multiplier<input id="boost-speed" type="number" min="1" max="3" step="0.1"></label>
     <label>x2 duration (seconds)<input id="boost-sec" type="number" min="0.5" max="30" step="0.5"></label>
+    <label>Freeze duration (seconds)<input id="freeze-sec" type="number" min="0.5" max="30" step="0.5"></label>
     <label>Random seed<input id="seed" type="number" min="0" max="4294967295"></label>
     <label class="check"><input id="debug" type="checkbox"> Show designer grid</label>
     <div class="actions"><button value="cancel">Close</button><button id="apply" value="apply">Apply & restart</button></div>
@@ -29,7 +30,7 @@ const dialog=document.querySelector<HTMLDialogElement>('#settings')!;
 const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
 const query=new URLSearchParams(location.search);
 const numeric=(name:string,fallback:number)=>{const value=Number(query.get(name));return query.has(name)&&Number.isFinite(value)?value:fallback;};
-let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',6),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000};
+let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',6),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000,freezeMs:numeric('freezeSec',DEFAULTS.freezeMs/1000)*1000};
 let game=new Game(settings),debug=query.has('debug');
 const historyDialog=document.querySelector<HTMLDialogElement>('#history')!;
 // Phone testing uses HTTP over LAN, where randomUUID may be unavailable.
@@ -64,9 +65,9 @@ document.querySelector('#export')!.addEventListener('click',()=>{
 });
 window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupted'));
 const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528,SLOTS=[66,195,324];
-const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff'};
+const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff',freeze:'#5aa9ff'};
 // Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
-const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09};
+const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500};
 let message='Tap a piece to rotate. Drag up to start.',messageColor=color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
@@ -145,18 +146,22 @@ document.querySelector('#tune')!.addEventListener('click',()=>{
   cancel();input('duration').value=String(game.settings.duration);input('grid').value=String(game.settings.grid);input('hop').value=String(game.settings.hopMs);
   input('nodes').value=String(game.settings.nodeCount);input('seed').value=String(game.settings.seed);input('debug').checked=debug;dialog.showModal();
   input('limit').value=String(game.settings.roadLimit);input('hit').value=String(game.settings.hitRadius);
-  input('boost-speed').value=String(game.settings.boostSpeed);input('boost-sec').value=String(game.settings.boostMs/1000);
+  input('boost-speed').value=String(game.settings.boostSpeed);input('boost-sec').value=String(game.settings.boostMs/1000);input('freeze-sec').value=String(game.settings.freezeMs/1000);
 });
 document.querySelector('#apply')!.addEventListener('click',event=>{
   event.preventDefault();if(!dialog.querySelector('form')!.reportValidity())return;
-  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000});dialog.close();
+  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000,freezeMs:Number(input('freeze-sec').value)*1000});dialog.close();
 });
 function draw(now:number){
   const dpr=Math.min(devicePixelRatio||1,3);if(canvas.width!==W*dpr){canvas.width=W*dpr;canvas.height=H*dpr;}
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.fillStyle=color.bg;ctx.fillRect(0,0,W,H);
-  text('3 MINUTES TO MIDNIGHT',10,15,12,color.muted);text(String(game.score)+' PTS',10,40,23);
-  const seconds=Math.max(0,Math.ceil((game.settings.duration*1000-game.elapsed)/1000));
-  text(`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,380,38,23,color.ink,'right');
+  text(String(game.score)+' PTS',10,36,23);
+  const seconds=Math.max(0,Math.ceil((game.settings.duration*1000-game.ringMs)/1000));
+  text(`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,380,36,23,game.frozen?color.freeze:color.ink,'right');
+  if(game.frozen){
+    const left=(game.freezeUntil-game.elapsed)/game.settings.freezeMs;
+    text(`❄ ${((game.freezeUntil-game.elapsed)/1000).toFixed(1)}s`,380,57,10,color.freeze,'right');roundRect(318-60*left,54,60*left,5,2.5,color.freeze);
+  }
   text(game.running?`PHASE ${game.phase} / 3`:game.over?'CAUGHT':'READY',195,39,11,color.muted,'center');
   if(game.boosted){
     const left=(game.boostUntil-game.elapsed)/game.settings.boostMs;
@@ -176,6 +181,11 @@ function draw(now:number){
     const a=screen(route[i-1]),b=screen(route[i]),dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len;
     const x=a.x+dx*.6,y=a.y+dy*.6;ctx.beginPath();ctx.moveTo(x-ux*4-uy*3,y-uy*4+ux*3);ctx.lineTo(x,y);ctx.lineTo(x-ux*4+uy*3,y-uy*4-ux*3);ctx.stroke();
   }
+  if(game.freezeNode){
+    const c=screen(game.freezeNode),glow=.5+.5*Math.sin(now/220);
+    ctx.save();ctx.shadowColor=color.freeze;ctx.shadowBlur=6+8*glow;ctx.fillStyle=color.freeze;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.4,0,Math.PI*2);ctx.fill();ctx.restore();
+    text('❄',c.x,c.y+.5,Math.max(10,scale()*.58),'#0c1a2e','center');
+  }
   if(game.boostNode){
     const c=screen(game.boostNode),glow=.5+.5*Math.sin(now/180);
     ctx.save();ctx.shadowColor=color.boost;ctx.shadowBlur=6+8*glow;ctx.fillStyle=color.boost;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.4,0,Math.PI*2);ctx.fill();ctx.restore();
@@ -186,8 +196,11 @@ function draw(now:number){
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
   // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
-  const phaseIndex=game.phase-1,beat=game.running?Math.pow(1-(ringBeats(game.elapsed,game.settings)%1),2.2):0;
-  ctx.save();ctx.strokeStyle=color.ring;ctx.lineWidth=3+beat*FX.pulseWidth[phaseIndex];ctx.shadowColor=color.ring;ctx.shadowBlur=beat*FX.pulseGlow[phaseIndex];
+  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen?Math.pow(1-(ringBeats(game.ringMs,game.settings)%1),2.2):0;
+  // Frozen: steady blue ring that blinks during its last FX.thawWarnMs.
+  const thawing=game.frozen&&game.freezeUntil-game.elapsed<FX.thawWarnMs&&Math.floor(now/150)%2===0;
+  const ringColor=game.frozen&&!thawing?color.freeze:color.ring;
+  ctx.save();ctx.strokeStyle=ringColor;ctx.lineWidth=3+beat*FX.pulseWidth[phaseIndex]+(game.frozen?1.5:0);ctx.shadowColor=ringColor;ctx.shadowBlur=game.frozen?14:beat*FX.pulseGlow[phaseIndex];
   ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.stroke();
   if(beat>.05){ctx.globalAlpha=beat*.45;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius-(1-beat)*scale()*1.2),0,Math.PI*2);ctx.stroke();}
   ctx.restore();
@@ -226,7 +239,7 @@ function draw(now:number){
     }
     text(active&&gesture?.mode==='discard'?(game.running?'DISCARD ↓':'LOCKED'):active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,SLOTS[i],558,11,color.muted,'center');
   });
-  text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD POINTS · VIOLET x2 · TAP HIM = REVERSE',195,613,10,color.muted,'center');
+  text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
   if(game.over){
     ctx.fillStyle='#09121bba';ctx.fillRect(0,BOARD_Y,W,BOARD_SIZE);
     roundRect(34,222,322,167,18,'#182630','#526976');text('THE RING CAUGHT HIM',195,251,17,color.ink,'center');
@@ -241,7 +254,8 @@ function frame(now:number){
   if(game.running&&game.phase!==lastPhase){lastPhase=game.phase;phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}
   for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
     lastPickupSeq=pick.seq;
-    if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${game.settings.boostMs/1000}s`,color.boost);}
+    if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${game.settings.freezeMs/1000}s`,color.freeze);}
+    else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${game.settings.boostMs/1000}s`,color.boost);}
     else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
   }
   if(game.running&&now-lastSave>5000)checkpoint();
