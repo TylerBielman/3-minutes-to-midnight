@@ -7,8 +7,8 @@ const shapeCells=id=>SHAPES.find(s=>s.id===id).cells;
 function fixture(cells,at={x:9,y:9}){
  const g=new Game({seed:11,nodeCount:1});g.board=set(cells);g.at=at;g.visited=new Set([key(at)]);g.nodes.clear();return g;
 }
-test('thirteen connected authored shapes, no O, rotation preserves cells and returns after four taps',()=>{
- assert.equal(SHAPES.length,13);assert.equal(SHAPES.filter(s=>s.group==='common').length,6);
+test('sixteen connected authored shapes, no O, rotation preserves cells and returns after four taps',()=>{
+ assert.equal(SHAPES.length,16);assert.equal(SHAPES.filter(s=>s.group==='common').length,6);
  for(const s of SHAPES){assert.equal(new Set(s.cells.map(key)).size,s.cells.length);assert.ok(!s.cells.some(c=>s.cells.some(d=>d.x===c.x+1&&d.y===c.y)&&s.cells.some(d=>d.x===c.x&&d.y===c.y+1)&&s.cells.some(d=>d.x===c.x+1&&d.y===c.y+1)));
  assert.equal(freshReach(new Set(s.cells.map(key)),new Set(),s.cells[0],{x:-1,y:-1}),s.cells.length);
  assert.deepEqual(rotated(s.cells,4),s.cells);assert.equal(rotated(s.cells,1).length,s.cells.length);}
@@ -73,8 +73,8 @@ test('navigation ignores Ring; large elapsed steps still detect death between la
  const g=fixture([[9,9],[10,9],[11,9],[12,9],[13,9],[14,9],[15,9],[16,9],[17,9]],{x:17,y:9});
  g.previous={x:16,y:9};g.visited=new Set(g.board);g.draft[0]={shapeId:'Dot',turns:0};g.place(0,{x:18,y:9});g.advance(60);assert.ok(!g.over);g.advance(10000);assert.equal(g.over,true);
 });
-test('deterministic draw groups approximate 70 / 15 / 15 and rotations do not advance random draws',()=>{
+test('deterministic draw groups approximate 65 / 15 / 20 and rotations do not advance random draws',()=>{
  const a=new Game({seed:19}),b=new Game({seed:19});a.running=b.running=true;a.rotate(0);a.discard(0);b.discard(0);assert.deepEqual(a.draft[0],b.draft[0]);
  const counts={common:0,small:0,large:0};for(let i=0;i<10000;i++){a.discard(0);counts[SHAPES.find(s=>s.id===a.draft[0].shapeId).group]++;}
- assert.ok(counts.common>6700&&counts.common<7300);assert.ok(counts.small>1300&&counts.small<1700);assert.ok(counts.large>1300&&counts.large<1700);
+ assert.ok(counts.common>6200&&counts.common<6800);assert.ok(counts.small>1300&&counts.small<1700);assert.ok(counts.large>1800&&counts.large<2200);
 });

@@ -141,3 +141,12 @@ Tyler: the endgame had turned into mostly reversing the jerboa. Keep tile placem
 | P5-03 | Retirement removes road that is entirely outside the Ring before the oldest road inside it | Swallowed road is useless; this keeps usable road under the jerboa. |
 | P5-04 | "Longer" means a piece's longest side in any rotation (I = 4, Long = 6, Cup = 3). Allowed while ≤ floor(diameter). At radius 3 (≈10 s into phase 3), 6-long pieces stop; at radius 2 (≈20 s in), I stops; at the very end only the Dot remains. If a group has no fitting shape, any fitting shape is dealt. | `shapeLength`, `Game.maxPieceLength`. |
 | P5-05 | Draft pieces that outgrow the Ring are swapped immediately for free, with an orange slot flash and "The Ring outgrew a piece". The piece in your hand is never swapped. | `Game.replaceOutgrown`. Not counted as a discard. |
+
+## Playtest 5b — 2026-09-26 (piece pool)
+
+| ID | Decision (confirmed with Tyler) |
+| --- | --- |
+| U33 | Add V5, T5 and Y pentominoes to the large (exotic) pool, shaped as in the puzzlesland pentomino chart. Supersedes A02/P2-04's palette: 16 shapes, 6 common, 4 small, 6 large. |
+| U34 | Group probabilities become 65% common / 15% small / 20% large (was 70/15/15). Each large shape is now ~3.3% per deal (was 5%); each common ~10.8% (was 11.7%). Supersedes U19's weights. |
+
+Not added (and why): O4 and P contain a 2×2 block, which would form a tiny loop (U18); Z4 was replaced in Playtest 2; I5 duplicates I and Long; L5, Z5 and F were left for later.

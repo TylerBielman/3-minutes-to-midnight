@@ -2,7 +2,7 @@
 
 ## Architecture
 
-- `src/runway.ts`: integer cells, thirteen shape definitions, normalized quarter-turn rotation, translation, placement validation, deterministic RNG, four-neighbor adjacency, reachable-unvisited branch weights and exit selection.
+- `src/runway.ts`: integer cells, sixteen shape definitions, normalized quarter-turn rotation, translation, placement validation, deterministic RNG, four-neighbor adjacency, reachable-unvisited branch weights and exit selection.
 - `src/game.ts`: pure simulation, settings/tuning, three draft slots, mutable board/visit sets and ordered placed-piece records, point nodes, selected/in-flight hops, future route forecast, score and Ring lifecycle.
 - `src/main.ts`: native Pointer Events input, Canvas 2D renderer, responsive portrait layout, route arrows/color, legality ghosts, announcements, results, Tune panel and restart.
 - `src/input.ts`: pure direction/threshold classification for tap, drag and downward discard.

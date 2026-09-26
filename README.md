@@ -36,7 +36,7 @@ The jerboa ignores the Ring. Roads survive it. Every run ends when it catches hi
 
 Ring contact is more forgiving (0.10-cell radius; original 0.24 is available in Tune). Above 25 squares, each placement retires the oldest eligible whole pieces while protecting the current hop, the new piece and connected runway. The limit is soft when those protections prevent removal; Tune accepts 0 for unlimited. Removed squares flash amber and become available again.
 
-The palette replaces S/Z with five-square Step and W staircases, and adds Line3, a straight three-square piece. Thirteen shapes total.
+The palette replaces S/Z with five-square Step and W staircases, and adds Line3, a straight three-square piece. Playtest 5 adds the V5, T5 and Y pentominoes to the large pool (sixteen shapes; deals are 65% common, 15% small, 20% large).
 
 **Runs** shows recent scores, survival time, actions, escaped close calls and removed runway. **Export runs** saves JSON with settings, action timeline and hop trail for review. Files stay on your device until you share them. History is local to this browser and exact address (including port); phone and PC histories are separate. Keep using the same launcher address or export before switching. Up to 50 runs are saved; full storage may retain fewer. Interrupted runs preserve the latest checkpoint, approximately every five seconds. Old unrecorded runs cannot be recovered.
 

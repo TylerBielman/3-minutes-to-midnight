@@ -46,3 +46,11 @@ test('endgame placement retires road outside the Ring first, then the oldest',()
   for(const p of g.lastRemoved)assert.ok(Math.hypot(p.x-c,p.y-c)>=g.radius,`removed inside cell ${key(p)}`);
   assert.ok(g.board.has('9,9')&&g.board.has('9,8'));
 });
+test('large pool adds V5, T5 and Y as the chart shows them',()=>{
+  const cells=id=>SHAPES.find(s=>s.id===id).cells.map(key).sort();
+  assert.deepEqual(cells('V5'),['0,0','0,1','0,2','1,2','2,2']);
+  assert.deepEqual(cells('T5'),['0,0','1,0','1,1','1,2','2,0']);
+  assert.deepEqual(cells('Y'),['0,1','1,0','1,1','1,2','1,3']);
+  assert.deepEqual(SHAPES.filter(s=>s.group==='large').map(s=>s.id),['Long','Cup','Cross','V5','T5','Y']);
+  assert.equal(shapeLength('V5'),3);assert.equal(shapeLength('T5'),3);assert.equal(shapeLength('Y'),4);
+});
