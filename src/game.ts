@@ -1,7 +1,9 @@
 import {SHAPES,key,same,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
 export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number};
 export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:6,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000};
-export const TUNING={groupWeights:{common:.70,small:.15,large:.15},phaseSpeeds:[.5,1,1.5],nodeRadius:.32,previewLimit:64,simulationStep:16,
+export const TUNING={groupWeights:{common:.70,small:.15,large:.15},// Ring phases: share of the run and speed relative to the average needed to close on time.
+  // Sum of fraction×speed must be 1 so the Ring closes exactly at the time limit. 180 s run → 60 / 80 / 40 s.
+  phaseFractions:[1/3,4/9,2/9],phaseSpeeds:[.5,.875,2],nodeRadius:.32,previewLimit:64,simulationStep:16,
   // Point values 1-5. Relative weights per Ring phase; later phases shift toward 5s.
   nodeValues:[1,2,3,4,5],phaseValueWeights:[[30,28,22,14,6],[15,20,25,22,18],[6,12,22,28,32]],startingFives:2,
   // x2 powerup: one on the board at a time, never during an active boost.
@@ -11,20 +13,30 @@ export const TUNING={groupWeights:{common:.70,small:.15,large:.15},phaseSpeeds:[
   // Powerups spawn at least this many cells inside the Ring so they are not swallowed at once.
   powerupRingMargin:2,
   // Ring heartbeat period per phase (ms). Faster beats signal rising tension.
-  ringPulseMs:[1400,900,550]};
+  ringPulseMs:[1400,900,550],
+  // Endgame: the runway cap shrinks with the Ring's area (cells) so old road clears faster late in the run.
+  endgameRoadDensity:.3,minRoadLimit:6};
 export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'boost'|'freeze',boosted:boolean};
 export type Draft={shapeId:string,turns:number};
 type Hop={from:Cell,to:Cell,elapsed:number,duration:number};
+const phaseMs=(settings:Settings)=>TUNING.phaseFractions.map(f=>f*settings.duration*1000);
+export function phaseAt(ringMs:number,settings:Settings):number {
+  let end=0;const lengths=phaseMs(settings);
+  for(let i=0;i<lengths.length;i++){end+=lengths[i];if(ringMs<end)return i+1;}
+  return lengths.length;
+}
 export function ringRadius(elapsedMs:number,settings:Settings):number {
-  const initial=settings.grid/2-.25,phaseMs=settings.duration*1000/3;
+  const initial=settings.grid/2-.25,lengths=phaseMs(settings);
   let remaining=Math.max(0,elapsedMs),distance=0;
-  for(const speed of TUNING.phaseSpeeds){const time=Math.min(phaseMs,remaining);distance+=initial/ (settings.duration*1000)*speed*time;remaining-=time;}
+  TUNING.phaseSpeeds.forEach((speed,i)=>{const time=Math.min(lengths[i],remaining);distance+=initial/(settings.duration*1000)*speed*time;remaining-=time;});
   return Math.max(0,initial-distance);
 }
+/** Longest side of a shape in any rotation, in cells. */
+export const shapeLength=(id:string)=>{const cells=SHAPES.find(s=>s.id===id)!.cells;return Math.max(...cells.map(p=>p.x),...cells.map(p=>p.y))+1;};
 /** Continuous heartbeat count; the fractional part is the position within the current beat. */
 export function ringBeats(elapsedMs:number,settings:Settings):number {
-  const phaseMs=settings.duration*1000/3;let remaining=Math.max(0,elapsedMs),beats=0;
-  for(const period of TUNING.ringPulseMs){const time=Math.min(phaseMs,remaining);beats+=time/period;remaining-=time;}
+  const lengths=phaseMs(settings);let remaining=Math.max(0,elapsedMs),beats=0;
+  TUNING.ringPulseMs.forEach((period,i)=>{const time=Math.min(lengths[i],remaining);beats+=time/period;remaining-=time;});
   return beats;
 }
 export function nodeValue(phase:number,roll:number):number {
@@ -67,12 +79,22 @@ export class Game {
   get radius(){return ringRadius(this.ringMs,this.settings);}
   get frozen(){return this.elapsed<this.freezeUntil;}
   get boosted(){return this.elapsed<this.boostUntil;}
-  get phase(){return Math.min(3,1+Math.floor(this.ringMs/(this.settings.duration*1000/3)));}
+  get phase(){return phaseAt(this.ringMs,this.settings);}
+  /** Pieces longer than the Ring is wide are not dealt. */
+  get maxPieceLength(){return Math.max(1,Math.floor(this.radius*2));}
+  /** Soft runway cap: the Tune setting, lowered in the endgame as the Ring's area shrinks. 0 = unlimited. */
+  get roadLimit(){
+    if(!this.settings.roadLimit)return 0;
+    const byArea=Math.floor(Math.PI*this.radius*this.radius*TUNING.endgameRoadDensity);
+    return Math.min(this.settings.roadLimit,Math.max(TUNING.minRoadLimit,byArea));
+  }
   get position():Cell{if(!this.hop)return {...this.at};const t=this.hop.elapsed/this.hop.duration;return {x:this.hop.from.x+(this.hop.to.x-this.hop.from.x)*t,y:this.hop.from.y+(this.hop.to.y-this.hop.from.y)*t};}
   private draw():Draft{
     let r=randomStep(this.pieceRng);this.pieceRng=r.state;
     const group:Group=r.value<TUNING.groupWeights.common?'common':r.value<TUNING.groupWeights.common+TUNING.groupWeights.small?'small':'large';
-    r=randomStep(this.pieceRng);this.pieceRng=r.state;const pool=SHAPES.filter(s=>s.group===group);
+    r=randomStep(this.pieceRng);this.pieceRng=r.state;
+    const fits=SHAPES.filter(s=>shapeLength(s.id)<=this.maxPieceLength),inGroup=fits.filter(s=>s.group===group);
+    const pool=inGroup.length?inGroup:fits.length?fits:SHAPES.filter(s=>s.id==='Dot');
     return {shapeId:pool[Math.floor(r.value*pool.length)].id,turns:0};
   }
   cells(slot:number,origin:Cell={x:0,y:0}):Cell[]{const p=this.draft[slot];return translated(rotated(SHAPES.find(s=>s.id===p.shapeId)!.cells,p.turns),origin);}
@@ -88,16 +110,27 @@ export class Game {
     this.retireRoad();this.peakSquares=Math.max(this.peakSquares,this.board.size);
     if(!this.hop)this.beginHop();return undefined;
   }
+  /** Swap out draft pieces that have outgrown the Ring. Skips the slot being dragged. Returns replaced slots. */
+  replaceOutgrown(skipSlot=-1):number[]{
+    if(this.over)return [];
+    const replaced:number[]=[];
+    this.draft.forEach((d,i)=>{if(i!==skipSlot&&shapeLength(d.shapeId)>this.maxPieceLength){this.record('outgrown',{slot:i,...d});this.draft[i]=this.draw();replaced.push(i);}});
+    return replaced;
+  }
   reverse(){if(this.over||!this.running)return;if(this.hop||this.previous){if(!this.reverseQueued){this.reversals++;this.record('reverse');}this.reverseQueued=true;this.revision++;if(!this.hop)this.beginHop();}}
   private retireRoad(){
-    this.lastRemoved=[];if(!this.settings.roadLimit)return;
-    const newest=this.pieces[this.pieces.length-1];
-    while(this.board.size>this.settings.roadLimit){
-      const index=this.pieces.findIndex(piece=>{
-        if(piece===newest||piece.cells.some(p=>same(p,this.at)||(this.hop&&(same(p,this.hop.from)||same(p,this.hop.to)))))return false;
-        const rest=new Set(this.board);piece.cells.forEach(p=>rest.delete(key(p)));
-        return freshReach(rest,new Set(),this.at,{x:-1,y:-1})===rest.size;
-      });
+    this.lastRemoved=[];const limit=this.roadLimit;if(!limit)return;
+    const newest=this.pieces[this.pieces.length-1],center=(this.settings.grid-1)/2;
+    const outside=(piece:{cells:Cell[]})=>piece.cells.every(p=>Math.hypot(p.x-center,p.y-center)>=this.radius);
+    const removable=(piece:{cells:Cell[]})=>{
+      if(piece===newest||piece.cells.some(p=>same(p,this.at)||(this.hop&&(same(p,this.hop.from)||same(p,this.hop.to)))))return false;
+      const rest=new Set(this.board);piece.cells.forEach(p=>rest.delete(key(p)));
+      return freshReach(rest,new Set(),this.at,{x:-1,y:-1})===rest.size;
+    };
+    while(this.board.size>limit){
+      // Road already swallowed by the Ring goes first, then the oldest eligible piece.
+      let index=this.pieces.findIndex(piece=>outside(piece)&&removable(piece));
+      if(index<0)index=this.pieces.findIndex(removable);
       if(index<0)break;
       const [piece]=this.pieces.splice(index,1);
       piece.cells.forEach(p=>{this.board.delete(key(p));this.visited.delete(key(p));});

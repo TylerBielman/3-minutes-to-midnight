@@ -119,3 +119,25 @@ Tyler requested stronger Ring tension, pickup feedback, phase-weighted point val
 | P4-03 | Frozen Ring is a steady blue glow with no heartbeat, and blinks orange/blue for its last 1.5 s as a thaw warning. Countdown turns blue with a ❄ timer bar under it | `FX.thawWarnMs` in `src/main.ts`. |
 | P4-04 | Powerups (x2 and freeze) spawn at least 2 cells inside the Ring. Before this, x2 could spawn on the edge and be swallowed about a second later | `TUNING.powerupRingMargin`. Point nodes unchanged. |
 | P4-05 | The browser tab title and the repository name are unchanged | Tyler asked only for the on-screen title; a new name is his call. |
+
+## Playtest 5 — 2026-09-26 (endgame)
+
+Tyler: the endgame had turned into mostly reversing the jerboa. Keep tile placement meaningful longer. Supersedes A03's equal phases and speeds.
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| U30 | Late in the run, retire old road more aggressively to make room for new tiles. |
+| U31 | Never deal a piece longer than the Ring's diameter. |
+| U32 | Lengthen the middle phase, shorten the final phase and make the Ring close faster in it. |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P5-01 | Phase lengths 60 / 80 / 40 s (fractions 1/3, 4/9, 2/9 of the run); speeds .5 / .875 / 2.0. The Ring still closes exactly at 3:00. Radius at the end of phase 1 is 7.7 cells (unchanged) and at the end of phase 2 is 4.1 cells (was 4.6). | Phase 3 is 33% faster than before (2.0 vs 1.5). Phase 2 is slightly slower so the totals still add up. `TUNING.phaseFractions`, `phaseSpeeds`; a test enforces the sum. |
+| P5-02 | Runway cap = min(Tune limit, 30% of the Ring's area in cells), never below 6. It starts to bite around radius 5.2, just before phase 3. The HUD's cap turns orange when lowered. | Continuous, so there is no sudden purge. `TUNING.endgameRoadDensity`, `minRoadLimit`. Retirement still happens only on placement and keeps all protections. |
+| P5-03 | Retirement removes road that is entirely outside the Ring before the oldest road inside it | Swallowed road is useless; this keeps usable road under the jerboa. |
+| P5-04 | "Longer" means a piece's longest side in any rotation (I = 4, Long = 6, Cup = 3). Allowed while ≤ floor(diameter). At radius 3 (≈10 s into phase 3), 6-long pieces stop; at radius 2 (≈20 s in), I stops; at the very end only the Dot remains. If a group has no fitting shape, any fitting shape is dealt. | `shapeLength`, `Game.maxPieceLength`. |
+| P5-05 | Draft pieces that outgrow the Ring are swapped immediately for free, with an orange slot flash and "The Ring outgrew a piece". The piece in your hand is never swapped. | `Game.replaceOutgrown`. Not counted as a discard. |

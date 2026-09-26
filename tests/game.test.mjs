@@ -65,7 +65,7 @@ test('node is collected only on landing, only once; replenishment includes explo
  h.nodes.clear();h.running=true;h.advance(1);assert.equal(h.nodes.size,20);assert.ok([...h.nodes.keys()].every(k=>h.board.has(k)));
 });
 test('Ring phases accelerate to zero; elapsed time starts on placement and roads survive death',()=>{
- const s={...DEFAULTS};assert.equal(ringRadius(0,s),9.25);assert.ok(Math.abs(ringRadius(60000,s)-9.25*5/6)<1e-8);assert.ok(Math.abs(ringRadius(120000,s)-9.25/2)<1e-8);assert.equal(ringRadius(180000,s),0);
+ const s={...DEFAULTS};assert.equal(ringRadius(0,s),9.25);assert.ok(Math.abs(ringRadius(60000,s)-9.25*5/6)<1e-8);assert.ok(Math.abs(ringRadius(140000,s)-9.25*4/9)<1e-8);assert.equal(ringRadius(180000,s),0);
  const g=fixture([[9,9],[10,9]]);g.draft[0]={shapeId:'Dot',turns:0};g.place(0,{x:11,y:9});const road=[...g.board];g.advance(200000);
  assert.equal(g.over,true);assert.ok(g.elapsed<=180000);assert.deepEqual([...g.board],road);
 });

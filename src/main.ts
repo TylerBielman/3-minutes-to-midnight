@@ -6,7 +6,7 @@ import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML=`<main class="game-shell">
-  <div class="tools"><span>P1 · PLAYTEST 4</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
+  <div class="tools"><span>P1 · PLAYTEST 5</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
   <canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
@@ -167,7 +167,7 @@ function draw(now:number){
     const left=(game.boostUntil-game.elapsed)/game.settings.boostMs;
     text(`x2 · ${((game.boostUntil-game.elapsed)/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
   }
-  text(`${game.board.size}${game.settings.roadLimit?` / ${game.settings.roadLimit}`:''} SQUARES${game.settings.roadLimit&&game.board.size>game.settings.roadLimit?' · PROTECTED':''}`,195,56,9,color.muted,'center');
+  text(`${game.board.size}${game.roadLimit?` / ${game.roadLimit}`:''} SQUARES${game.roadLimit&&game.board.size>game.roadLimit?' · PROTECTED':''}`,195,56,9,game.roadLimit&&game.roadLimit<game.settings.roadLimit?color.ring:color.muted,'center');
   ctx.save();ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.clip();
   if(debug){ctx.strokeStyle='#25343e';ctx.lineWidth=.5;for(let i=0;i<=game.settings.grid;i++){
     const n=i*scale();ctx.beginPath();ctx.moveTo(BOARD_X+n,BOARD_Y);ctx.lineTo(BOARD_X+n,BOARD_Y+BOARD_SIZE);ctx.moveTo(BOARD_X,BOARD_Y+n);ctx.lineTo(BOARD_X+BOARD_SIZE,BOARD_Y+n);ctx.stroke();}}
@@ -258,6 +258,8 @@ function frame(now:number){
     else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${game.settings.boostMs/1000}s`,color.boost);}
     else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
   }
+  // Pieces that no longer fit across the Ring are swapped out (never the one in your hand).
+  for(const slot of game.replaceOutgrown(gesture?.slot??-1)){flashSlot=slot;flashUntil=now+650;announce('The Ring outgrew a piece · new piece dealt',color.ring);}
   if(game.running&&now-lastSave>5000)checkpoint();
   draw(now);requestAnimationFrame(frame);
 }

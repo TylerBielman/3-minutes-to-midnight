@@ -1,5 +1,5 @@
 import {type Game} from './game.js';
-export const BUILD='P1-playtest-4';
+export const BUILD='P1-playtest-5';
 export const HISTORY_KEY='3mtm-runs-v1';
 export type Outcome='active'|'caught'|'restarted'|'interrupted';
 export function runReport(game:Game,id:string,startedAt:string,outcome:Outcome){

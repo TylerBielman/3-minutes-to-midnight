@@ -25,11 +25,11 @@ test('node values span 1-5; each phase shifts the mix toward 5s',()=>{
   assert.ok(counts[0][5]<counts[1][5]&&counts[1][5]<counts[2][5],'more 5s each phase');
 });
 test('Ring heartbeat quickens each phase and is continuous across phase changes',()=>{
-  const s={...DEFAULTS},phaseMs=s.duration*1000/3;
-  const rate=p=>(ringBeats(phaseMs*(p-1)+20000,s)-ringBeats(phaseMs*(p-1)+10000,s))/10;
+  const s={...DEFAULTS},starts=[0,60000,140000];
+  const rate=p=>(ringBeats(starts[p-1]+20000,s)-ringBeats(starts[p-1]+10000,s))/10;
   assert.ok(rate(1)<rate(2)&&rate(2)<rate(3));
-  assert.ok(Math.abs(ringBeats(phaseMs+1e-6,s)-ringBeats(phaseMs-1e-6,s))<1e-6);
-  assert.equal(ringBeats(0,s),0);assert.ok(Math.abs(ringBeats(phaseMs,s)-phaseMs/TUNING.ringPulseMs[0])<1e-9);
+  for(const t of starts.slice(1))assert.ok(Math.abs(ringBeats(t+1e-6,s)-ringBeats(t-1e-6,s))<1e-6);
+  assert.equal(ringBeats(0,s),0);assert.ok(Math.abs(ringBeats(60000,s)-60000/TUNING.ringPulseMs[0])<1e-9);
 });
 test('x2 spawns after the opening delay, speeds hops and doubles points for its duration',()=>{
   const g=lineGame();

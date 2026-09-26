@@ -25,6 +25,7 @@ Connect the phone to the PC hotspot, then open the address printed in the launch
 - Violet x2 node: he hops faster (1.4×) and points count double for 7 seconds.
 - Blue ❄ freeze node: the Ring and the countdown stop for 6 seconds; the Ring glows blue and blinks just before it thaws.
 - Powerup speed and durations are adjustable in Tune.
+- Phases last 60 s, 80 s and 40 s, and the Ring closes fastest in the last one. Late in the run old road clears faster, and pieces longer than the Ring is wide are swapped out.
 - The Ring's pulse quickens at every phase change. Point values rise toward 5 as phases advance.
 - Cyan road and arrows show his plan. Gold numbers are points.
 - New run restarts; Tune changes duration, board size, hop speed, node count, seed, runway limit, Ring hit radius and debug grid.

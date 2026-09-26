@@ -16,6 +16,10 @@ Grid cells are integer `(x,y)` keyed as `x,y`. The odd-sized board has a central
 
 A draft entry contains shape ID and quarter turns. Cells are normalized after rotation. Placement is validated again on release: all cells integer/in bounds, unique, non-overlapping, and at least one edge-adjacent to existing runway. Ring position is deliberately absent from this function. Failed placement does not mutate board, draft, clock or orientation.
 
+## Endgame limits
+
+The effective runway cap is `min(roadLimit, max(minRoadLimit, floor(π·r²·endgameRoadDensity)))`; it only bites late in the run. Retirement prefers pieces entirely outside the Ring, then the oldest. Draws only offer shapes whose longest side is at most `floor(2r)`, and `replaceOutgrown` swaps draft pieces that no longer fit, skipping the piece being dragged.
+
 ## Retirement contract
 
 After successful placement, while board size exceeds nonzero `roadLimit`, find the oldest piece that is not newest, does not contain current/from/to actor cells, and whose removal leaves all remaining board cells reachable from the actor. Remove it whole and repeat. If no piece qualifies, retain the excess. Ring, timer, invalid drops and hops never trigger retirement. The oldest seed cell can retire. Collectible positions remain independent. Rebuilding retired cells restores unvisited territory. Revision invalidates forecast immediately; an in-flight hop stays protected.
@@ -32,7 +36,7 @@ Forecasting clones visit memory and navigation RNG. It starts with the immutable
 
 ## Time and Ring
 
-Simulation advances in slices no larger than 16 ms, splitting on hop completion. Ring radius is piecewise linear, with equal-duration phases and rates .5/1/1.5 times the average required speed. The starting radius is `grid/2 - .25` cell units and reaches zero at the selected maximum duration.
+Simulation advances in slices no larger than 16 ms, splitting on hop completion. Ring radius is piecewise linear. Phases take 1/3, 4/9 and 2/9 of the run (60/80/40 s at 3:00) at .5/.875/2.0 times the average required speed. The starting radius is `grid/2 - .25` cell units and reaches zero at the selected maximum duration.
 
 The jerboa's ground center interpolates along the committed edge. Capture occurs if distance from board center plus configurable hit radius (default .10 cells; original .24 available in Tune) is at least the current Ring radius. The visual bounce is excluded. Collision precedes landing awards. The run ends on contact, usually before the theoretical zero-radius instant. Large frame gaps are simulated through; the clock does not pause when the app is hidden.
 
