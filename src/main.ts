@@ -182,7 +182,7 @@ function draw(now:number){
     text('x2',c.x,c.y,Math.max(10,scale()*.5),'#1d1026','center');
   }
   const pointTint=game.boosted?color.boost:color.points;
-  for(const [k,value] of game.nodes){const c=screen(cell(k));ctx.fillStyle=pointTint;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.34,0,Math.PI*2);ctx.fill();text(String(value),c.x,c.y,Math.max(10,scale()*.52),'#21211b','center');}
+  for(const [k,value] of game.nodes){const c=screen(cell(k));ctx.fillStyle=pointTint;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.34,0,Math.PI*2);ctx.fill();const shown=game.boosted?value*2:value;text(String(shown),c.x,c.y,Math.max(shown>9?8:10,scale()*(shown>9?.42:.52)),'#21211b','center');}
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
   // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
