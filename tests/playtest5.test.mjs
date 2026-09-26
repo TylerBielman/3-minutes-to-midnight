@@ -67,3 +67,10 @@ test('ten point nodes at the start, fewer as the Ring closes, never below the mi
   // Existing nodes are not deleted early; the pool just stops refilling above the target.
   const h=new Game();h.running=true;h.board=new Set(['9,9','10,9']);h.ringMs=140000;h.nodes.clear();h.advance(1);assert.equal(h.nodes.size,h.nodeTarget);
 });
+test('the opening hand never repeats a shape in any slot',()=>{
+  for(const slots of [2,3])for(let seed=0;seed<500;seed++){
+    const a=new Game({seed,slots}),ids=a.draft.map(d=>d.shapeId);
+    assert.equal(new Set(ids).size,ids.length,`seed ${seed}: ${ids}`);
+    assert.deepEqual(new Game({seed,slots}).draft,a.draft,'same seed, same hand');
+  }
+});

@@ -159,6 +159,7 @@ Not added (and why): O4 and P contain a 2×2 block, which would form a tiny loop
 | --- | --- |
 | U35 | Number of draft slots is tunable from 1 to 3; default 2 (was a fixed 3). |
 | U36 | Default point nodes 10 (was 6), fewer in the endgame. |
+| U37 | The opening hand never has the same piece in two slots. |
 
 ### Agent calls for review
 
@@ -166,3 +167,4 @@ Not added (and why): O4 and P contain a 2×2 block, which would form a tiny loop
 | --- | --- | --- |
 | P6-01 | The node target shrinks in proportion to the Ring's radius: 10 at the start, about 8 at the end of phase 1, 5 at the start of phase 3, never below 2. Nodes already on the board are not deleted early; the pool just stops refilling above the target. | Keeps node density per area of play roughly steady instead of crowding the small late Ring. `Game.nodeTarget`, `TUNING.minNodes`. |
 | P6-02 | Slots are centered and spaced 129 px apart whatever the count; each keeps its tap target size. Tune "Draft slots" and URL `slots`. | `slotX` in `src/main.ts`. |
+| P6-03 | Applies to the starting hand only; later deals can still repeat a shape already in the tray. L and J count as different pieces. Repeats are redrawn from the same seeded piece stream, so a seed still reproduces the same hand. | Constructor in `src/game.ts`. |

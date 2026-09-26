@@ -77,7 +77,9 @@ export class Game {
     this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};
     this.board.add(key(this.at));this.visited.add(key(this.at));
     this.pieces.push({cells:[{...this.at}],shapeId:'Start'});
-    this.draft=Array.from({length:s.slots},()=>this.draw());this.refillNodes();
+    // The opening hand never repeats a shape; redraw (deterministically, same seed) until each slot differs.
+    this.draft=[];
+    while(this.draft.length<s.slots){let d=this.draw();for(let i=0;i<50&&this.draft.some(o=>o.shapeId===d.shapeId);i++)d=this.draw();this.draft.push(d);}this.refillNodes();
   }
   get radius(){return ringRadius(this.ringMs,this.settings);}
   get frozen(){return this.elapsed<this.freezeUntil;}
