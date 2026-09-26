@@ -6,7 +6,7 @@ color 0A
 
 echo.
 echo ============================================================
-echo   3 MINUTES TO MIDNIGHT - PHONE TEST
+echo   3 MINUTES TO MIDNIGHT - JERBOA P1
 echo ============================================================
 echo.
 echo This window will set up and run the prototype for you.
@@ -44,13 +44,17 @@ exit /b 0
 
 :NODE_OK
 echo Node.js found.
+if not exist "src\main.ts" if exist "dist\index.html" goto READY_TO_SERVE
 if not exist "node_modules\" (
   echo Installing prototype files. This only happens the first time...
-  call npm install
+  call npm ci
   if errorlevel 1 goto NPM_FAIL
 )
 
 echo.
+call npm run build
+if errorlevel 1 goto NPM_FAIL
+:READY_TO_SERVE
 echo Finding an unused game port...
 set "GAME_PORT="
 for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$used=@(3000,5173); foreach($p in 5180..5299){ if($used -notcontains $p -and -not (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)){ $p; break } }"`) do set "GAME_PORT=%%P"
@@ -83,12 +87,12 @@ echo Make sure the phone is on the same Wi-Fi as this PC.
 echo If Windows Firewall asks, choose Allow for PRIVATE networks.
 echo.
 echo Opening the prototype on this PC too...
-start "" "http://localhost:!GAME_PORT!"
+rem Browser opens once the server is ready.
 echo.
 echo Starting server now. KEEP THIS WINDOW OPEN while testing.
 echo To stop it later, close this window or press Ctrl+C.
 echo.
-call npm run dev -- --port !GAME_PORT! --strictPort
+node scripts\serve.mjs --port !GAME_PORT! --open
 if errorlevel 1 goto RUN_FAIL
 exit /b 0
 
