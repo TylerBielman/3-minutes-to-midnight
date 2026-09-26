@@ -29,7 +29,16 @@ This repo intentionally starts smaller than the game.
 
 If the interaction is not fun, do not add those systems.
 
-## Phone test on Windows — easiest path
+## Phone test — play in the browser (easiest)
+Every push to GitHub builds the game and publishes it with GitHub Pages:
+- `main`: https://tylerbielman.github.io/3-minutes-to-midnight/
+- any other branch: `https://tylerbielman.github.io/3-minutes-to-midnight/branch/<branch-name>/` (slashes in the name become dashes)
+
+A deploy takes about 1–2 minutes after the push. The exact URL is printed in the run summary on the repo's **Actions** tab. Bookmark it on the phone and refresh after each push.
+
+One-time setup (already done if the links work): repo **Settings → Pages → Source: Deploy from a branch → `gh-pages` / `(root)`**.
+
+## Phone test on Windows — local PC server
 Double-click `START_PHONE_TEST.bat`.
 
 The launcher will:

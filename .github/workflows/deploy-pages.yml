@@ -1,0 +1,61 @@
+name: Deploy phone build
+
+# Every push builds the game and publishes it to the gh-pages branch:
+#   main            -> https://<owner>.github.io/3-minutes-to-midnight/
+#   any other branch -> https://<owner>.github.io/3-minutes-to-midnight/branch/<branch-name>/
+# (slashes in branch names become dashes)
+#
+# One-time setup: Settings -> Pages -> Source: "Deploy from a branch", branch gh-pages, folder / (root).
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Pick destination folder
+        id: dest
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+            echo "path=" >> "$GITHUB_OUTPUT"
+          else
+            safe="$(echo "$GITHUB_REF_NAME" | tr '/' '-')"
+            echo "dir=branch/$safe" >> "$GITHUB_OUTPUT"
+            echo "path=branch/$safe/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: dist
+          destination_dir: ${{ steps.dest.outputs.dir }}
+          keep_files: true
+
+      - name: Print phone URL
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          url="https://${owner}.github.io/${GITHUB_REPOSITORY#*/}/${{ steps.dest.outputs.path }}"
+          echo "Phone URL: $url"
+          echo "### Phone URL: $url" >> "$GITHUB_STEP_SUMMARY"
