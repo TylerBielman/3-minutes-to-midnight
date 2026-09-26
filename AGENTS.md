@@ -10,7 +10,7 @@ Portrait phone, hidden grid, fixed connected polyomino runway, draft-only rotati
 
 ## Guardrails
 - No overlap; every new piece connects. Every shared edge is traversable.
-- Roads persist and can cross the Ring. Only creature contact ends the run.
+- Roads can cross the Ring, which never erodes them. Placement-triggered retirement removes old whole pieces above a configurable soft limit, protecting the creature and connected road. Only creature contact ends the run.
 - Navigation ignores the Ring and point values. Color shows route, not speed.
 - Preview and actual travel must share deterministic routing.
 - Keep cancelled drags in their original slots and revalidate release.

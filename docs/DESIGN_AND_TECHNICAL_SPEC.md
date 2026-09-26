@@ -1,6 +1,6 @@
 # 3 Minutes to Midnight — Prototype 1: Jerboa Runway
 
-Status: playable implementation for the first route-building playtest. This document supersedes Build 0.1's polygon docking sandbox. The previous design is preserved in [archive/BUILD_0_1_DESIGN.md](archive/BUILD_0_1_DESIGN.md), not active requirements.
+Status: Playtest 2 revision following the first playable route-building test. This document supersedes Build 0.1's polygon docking sandbox. The previous design is preserved in [archive/BUILD_0_1_DESIGN.md](archive/BUILD_0_1_DESIGN.md), not active requirements.
 
 Read [DECISIONS.md](DECISIONS.md) for the distinction between Tyler-approved rules and agent-made implementation calls. Technical details are in [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md). Validation and the next playtest are in [PLAYTEST.md](PLAYTEST.md).
 
@@ -27,23 +27,29 @@ The player builds his future itinerary. He is curious and completely unaware of 
 - Every cell must be inside the square board and unoccupied. At least one cell must share an edge with existing runway.
 - Every shared cell edge connects; diagonal corners do not. Side connections, junctions, shortcuts and loops are legal.
 - Pieces can straddle or sit outside the current Ring. The Ring is not a construction wall.
-- Placed runway is permanent and remains intact when the Ring passes over it.
+- The Ring leaves runway intact. New placements may retire old whole pieces under the runway limit below.
 - Illegal placement never commits. It displays red with a reason and returns to the same draft slot on release. Orientation is retained for another attempt.
 - A slot stays reserved while its piece is held. Placement refills only that slot.
-- A horizontal swipe within the row discards/rerolls that slot without a separate currency cost. The active run's clock continues.
-- No hammer or other road-removal action in P1.
+- A downward swipe from the row discards/rerolls that slot without a separate currency cost. The active run's clock continues.
+- No manual hammer in P1. Automatic retirement is tied to successful placement.
+
+### Runway retirement
+
+Start with a soft limit of 25 occupied squares, including the starting square. After each successful placement, remove the oldest eligible whole piece until at or below the limit. Protect the newest piece, the jerboa’s current cell, both ends of his in-flight hop, and connectivity of all remaining runway. Skip ineligible older pieces. If none can be removed safely, temporarily exceed the limit and show PROTECTED beside the square count. Never reject an otherwise legal placement for this reason. Reconsider removal on the next placement, not during a hop. The starting square can retire once safe.
+
+Retiring cells flash amber briefly, then disappear; they are immediately empty for placement. Clear their exploration memory so rebuilt road is new territory. Collectibles stay on their ground locations. Tune can change the limit or disable it with 0. This conservative whole-piece rule is provisional: dense loops/bridges can prevent enough removal, which the next playtest should evaluate.
 
 ### Authored pool
 
-Shapes use orthogonally connected squares. Rotation is allowed in the draft; reflection is not, so L/J and S/Z remain separate.
+Shapes use orthogonally connected squares. Rotation is allowed in the draft; reflection is not, so L/J remain separate.
 
 | Group | Total draw probability | Members |
 | --- | --- | --- |
-| Common | 70% | I, L, J, T, S, Z — four cells each; no O/2×2 square |
-| Small exotic | 15% | Dot (1), Domino (2), Elbow (3) |
+| Common | 70% | I, L, J, T (4 each), Step and W (5 each); no O/2×2 square |
+| Small exotic | 15% | Dot (1), Domino (2), Line3 (3 straight), Elbow (3) |
 | Large exotic | 15% | Long (6), Cup (5), Cross (5) |
 
-Members are equally likely within their group. The Dot has a 5% chance on each draw. Exact silhouettes live in `src/runway.ts`; no special powers attach to any shape. Watch whether free swiping makes players hunt for Dots instead of using the offered shapes.
+Members are equally likely within their group. Each small piece, including Dot and Line3, has a 3.75% chance on each draw. Exact silhouettes live in `src/runway.ts`; no special powers attach to any shape. Watch whether free swiping makes players hunt for Dots instead of using the offered shapes.
 
 ## Autonomous movement
 
@@ -68,9 +74,9 @@ The preview uses the same decision function and a copy of its random state. It n
 ## Ring and collision
 
 - The jerboa has zero awareness of the Ring and can willingly walk into danger.
-- Only the jerboa's ground footprint touching the Ring ends the run. The decorative bounce and ears do not change the hit area.
+- Only the jerboa's small ground footprint touching the Ring ends the run. Playtest 2 reduces its radius from 0.24 to 0.10 cells for near misses; this does not change the orthogonal hop path. The decorative bounce and ears do not change the hit area.
 - Roads remain mechanically usable outside the Ring, but taking the jerboa there is lethal.
-- There is no road erosion, falling, health, recovery, or extra life.
+- There is no Ring-driven erosion, falling, health, recovery, or extra life.
 - Ring speed advances through three phases; movement and draft controls remain active throughout.
 
 ## Point nodes
@@ -82,6 +88,10 @@ The preview uses the same decision function and a copy of its random state. It n
 - Avoid duplicate node occupancy and the jerboa's current/committed landing cells. These exclusions prevent instant replacement/collection loops, rather than optimizing player opportunities.
 - A node's visible disk must fit inside the Ring. If too few cells remain, the pool shrinks rather than forcing an impossible spawn.
 - Nodes do not cause a stage transition. No powerups in P1.
+
+## Run history
+
+Record local run summaries and a timestamped action/hop timeline, with seed, settings, build, score, survival time, placements, rotations, discards, invalid drops, reversals, road removed and peak road size after retirement. A near-miss escape means entering within 0.5 cells of contact and later getting more than 0.75 cells clear; capture is not an escape. Runs can end as caught, restarted or interrupted. Runs → Export runs creates a shareable JSON report. No account, upload or cloud synchronization.
 
 ## Deferred experiments
 

@@ -13,12 +13,20 @@ Connect the phone to the PC hotspot, then open the address printed in the launch
 - Tap a draft piece to rotate 90 degrees.
 - Drag up to connect it. Orientation is locked while held.
 - Invalid release returns it to the same slot.
-- Swipe sideways within the draft row to discard/reroll.
+- Swipe down from the draft row to discard/reroll.
 - Tap the jerboa to reverse after his current hop.
 - Cyan road and arrows show his plan. Gold numbers are points.
-- New run restarts; Tune changes duration, board size, hop speed, node count, seed and debug grid.
+- New run restarts; Tune changes duration, board size, hop speed, node count, seed, runway limit, Ring hit radius and debug grid.
 
 The jerboa ignores the Ring. Roads survive it. Every run ends when it catches him; collect as many points as possible first.
+
+## Playtest 2 changes
+
+Ring contact is more forgiving (0.10-cell radius; original 0.24 is available in Tune). Above 25 squares, each placement retires the oldest eligible whole pieces while protecting the current hop, the new piece and connected runway. The limit is soft when those protections prevent removal; Tune accepts 0 for unlimited. Removed squares flash amber and become available again.
+
+The palette replaces S/Z with five-square Step and W staircases, and adds Line3, a straight three-square piece. Thirteen shapes total.
+
+**Runs** shows recent scores, survival time, actions, escaped close calls and removed runway. **Export runs** saves JSON with settings, action timeline and hop trail for review. Files stay on your device until you share them. History is local to this browser and exact address (including port); phone and PC histories are separate. Keep using the same launcher address or export before switching. Up to 50 runs are saved; full storage may retain fewer. Interrupted runs preserve the latest checkpoint, approximately every five seconds. Old unrecorded runs cannot be recovered.
 
 ## Development
 

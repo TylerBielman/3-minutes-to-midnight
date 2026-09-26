@@ -7,8 +7,8 @@ const shapeCells=id=>SHAPES.find(s=>s.id===id).cells;
 function fixture(cells,at={x:9,y:9}){
  const g=new Game({seed:11,nodeCount:1});g.board=set(cells);g.at=at;g.visited=new Set([key(at)]);g.nodes.clear();return g;
 }
-test('twelve connected authored shapes, no O, rotation preserves cells and returns after four taps',()=>{
- assert.equal(SHAPES.length,12);assert.equal(SHAPES.filter(s=>s.group==='common').length,6);
+test('thirteen connected authored shapes, no O, rotation preserves cells and returns after four taps',()=>{
+ assert.equal(SHAPES.length,13);assert.equal(SHAPES.filter(s=>s.group==='common').length,6);
  for(const s of SHAPES){assert.equal(new Set(s.cells.map(key)).size,s.cells.length);assert.ok(!s.cells.some(c=>s.cells.some(d=>d.x===c.x+1&&d.y===c.y)&&s.cells.some(d=>d.x===c.x&&d.y===c.y+1)&&s.cells.some(d=>d.x===c.x+1&&d.y===c.y+1)));
  assert.equal(freshReach(new Set(s.cells.map(key)),new Set(),s.cells[0],{x:-1,y:-1}),s.cells.length);
  assert.deepEqual(rotated(s.cells,4),s.cells);assert.equal(rotated(s.cells,1).length,s.cells.length);}

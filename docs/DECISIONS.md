@@ -59,3 +59,17 @@
 - How much difficulty should come from shape fitting versus excursions and timing?
 
 No smart spawn correction, guaranteed helpful draft, hammer, powerups, stage progression or speed-changing road colors have been slipped into P1.
+
+## Playtest 2 — 2026-09-25 (supersedes relevant initial calls)
+
+Tyler requested more forgiving near misses, removal around 25 squares, better zigzags, downward discard, run statistics, and a straight three-square piece. These changes supersede permanence in U07, the S/Z palette in U18, footprint A09 and gesture A11. The Ring still does not erase road (U10).
+
+| ID | Agent call for this iteration | Review point |
+| --- | --- | --- |
+| P2-01 | Hit radius .10 cells instead of .24; selectable in Tune. Hop centers still follow orthogonal edges. | Does this create enough corner latitude? No hidden collision grace or curve added. |
+| P2-02 | 25-square soft cap including seed; placement retires oldest eligible whole pieces, protecting actor/in-flight endpoints/newest piece and all remaining connectivity. Seed may retire. | Safety can leave more than 25 squares; UI shows PROTECTED. Compare to unlimited with limit 0. |
+| P2-03 | Retired cells become empty immediately, flash amber for .9s, lose visit memory; point nodes stay put. | Rebuilt ground is unexplored. Removal only on new placement. |
+| P2-04 | Replace both S and Z with W5 and Step5. Step means three vertical squares, one across, one farther up (five total). Add requested Line3 to small pool. | 13 shapes: 6 common, 4 small, 3 large. Group probabilities remain 70/15/15; each small now 3.75%. |
+| P2-05 | Downward swipe threshold 30 logical pixels; stronger vertical than horizontal intent. Upward drag locks out discard. Pull back before release to cancel. | Easier thumb movement without accidentally discarding a returned drag. |
+| P2-06 | Local summaries plus action/hop events; up to 50 runs, 5-second checkpoints, JSON export. No cloud/account. | Phone reports must be exported and shared; I cannot automatically see remote play. |
+| P2-07 | Count escaped near misses only after entering .5-cell danger margin and returning beyond .75. Track capture separately. | Avoid calling every fatal approach a successful near miss. |

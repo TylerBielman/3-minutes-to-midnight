@@ -4,8 +4,8 @@ export type Shape = {id:string,group:Group,cells:Cell[]};
 const shape=(id:string,group:Group,rows:string[]):Shape=>({id,group,cells:rows.flatMap((row,y)=>[...row].flatMap((v,x)=>v==='#'?[{x,y}]:[]))});
 export const SHAPES:Shape[]=[
   shape('I','common',['####']),shape('L','common',['#','#','##']),shape('J','common',['.#','.#','##']),
-  shape('T','common',['###','.#']),shape('S','common',['.##','##']),shape('Z','common',['##','.##']),
-  shape('Dot','small',['#']),shape('Domino','small',['##']),shape('Elbow','small',['#','##']),
+  shape('T','common',['###','.#']),shape('W','common',['#','##','.##']),shape('Step','common',['.#','##','#','#']),
+  shape('Dot','small',['#']),shape('Domino','small',['##']),shape('Line3','small',['###']),shape('Elbow','small',['#','##']),
   shape('Long','large',['######']),shape('Cup','large',['#.#','###']),shape('Cross','large',['.#','###','.#'])
 ];
 export const key=(c:Cell)=>`${c.x},${c.y}`;
