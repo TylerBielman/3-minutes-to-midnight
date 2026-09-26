@@ -1,36 +1,19 @@
 # AGENTS.md — 3 Minutes to Midnight
 
-## Design authority
-This repository is an interaction-first prototype. Read `CODEX_BUILD_0_1.md` and `docs/DESIGN_AND_TECHNICAL_SPEC.md` before making gameplay changes.
+## Current authority
+Read `docs/DESIGN_AND_TECHNICAL_SPEC.md`, `docs/TECHNICAL_DESIGN.md`, and `docs/DECISIONS.md` before gameplay changes. Prototype 1 Jerboa Runway supersedes Build 0.1's docking experiment; archive files are historical only.
 
-## Current milestone
-**Build 0.1 — Interaction Sandbox**
+Tyler authorized the agent to make routine calls, document them in the decision ledger, and prioritize a playable prototype. Ask only for choices that materially change the game. Do not ask repeatedly about tuning values that can be exposed as settings.
 
-Single question: does one-handed `grab → scan glowing docks → orbit/pivot → snap` feel good on a portrait phone?
+## Active scope
+Portrait phone, hidden grid, fixed connected polyomino runway, draft-only rotation and rerolls, autonomous exploration/patrol, visible future route, tap-to-reverse, random point nodes, three-phase closing Ring, score on capture. Native Pointer Events share mouse and touch behavior.
 
-## Do not broaden scope
-Do NOT add scoring, shrinking Ring, the 180-second timer, Bombs, draft cycling/repopulation, cascades, powerups, progression, backend, accounts, monetization, or polish systems until explicitly requested.
-
-## Non-negotiable interaction rules
-- Portrait, one-handed mobile play.
-- Square playfield.
-- Circular static Ring for Build 0.1.
-- Compact neutral asymmetric Seed at center.
-- Docks are standardized colored bumps.
-- A colored dock accepts only that color.
-- All accessible matching-color docks glow when a piece is held, even if the held geometry cannot fit there.
-- Geometry legality remains the player's puzzle.
-- No body overlap.
-- No placement crossing the Ring.
-- Connected bumps disappear/merge at the seam.
-- Placement is permanent after release.
-- Deterministic polygon collision; no rigid-body physics.
-- Touch offset keeps the held piece above the player's finger.
-
-## Engineering philosophy
-- Prototype for learning, not permanence.
-- Prefer readable, data-driven code over abstraction.
-- Put tuning constants near the top or in dedicated config.
-- Add debug visualization for docks, polygons, candidate connection, collision reason, magnet radius, and pointer position.
-- Preserve mouse support for desktop testing while sharing the same Pointer Events logic used on touch.
-- Do not silently change game rules to make implementation easier. Surface the problem instead.
+## Guardrails
+- No overlap; every new piece connects. Every shared edge is traversable.
+- Roads can cross the Ring, which never erodes them. Placement-triggered retirement removes old whole pieces above a configurable soft limit, protecting the creature and connected road. Only creature contact ends the run.
+- Navigation ignores the Ring and point values. Color shows route, not speed.
+- Preview and actual travel must share deterministic routing.
+- Keep cancelled drags in their original slots and revalidate release.
+- Keep smart spawns, hammer, powerups, stages, progression, accounts and backend deferred.
+- Record agent-made decisions separately from user-approved decisions.
+- Test meaningful routing, geometry, timing and input changes. Preserve the prebuilt phone-test package flow.

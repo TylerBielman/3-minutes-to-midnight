@@ -1,16 +1,7 @@
-# Visual reference note
+# Historical visual references
 
-The repo-native implementation contract is `../DESIGN_AND_TECHNICAL_SPEC.md`.
+The former Build 0.1 artifact bundle (`Master_Design_v0.4.docx`, `UI_Wireframe_0.5_Validated.png`, `Geometry_Exploration_0.1.png`) described the retired irregular-piece docking design.
 
-The original visual/design artifact bundle from the design session contains:
-- `Master_Design_v0.4.docx`
-- `UI_Wireframe_0.5_Validated.png`
-- `Geometry_Exploration_0.1.png`
+Current authority is [the Jerboa Prototype 1 design](../DESIGN_AND_TECHNICAL_SPEC.md), [technical design](../TECHNICAL_DESIGN.md), and [decision ledger](../DECISIONS.md). Do not reintroduce docks, orbiting or geometric Seed limbs from the old artwork.
 
-Those source artifacts are retained in the ChatGPT project handoff bundle. For coding, do not infer rules from aesthetics: the Markdown spec and `AGENTS.md` are authoritative.
-
-Visual target reminders:
-- The validated topology reference is clean/symmetric only to prove connection/scoring rules; **do not make the actual game a spoke wheel**.
-- Actual Chooseables should be irregular readable polygons with angled docks, concavities, pockets, occlusion opportunities, and occasional surprising multi-dock fits.
-- Seed is compact, neutral, asymmetric, with ~6 colored bump docks.
-- Used dock bumps merge/disappear at a flush seam; unused bumps remain visible.
+A simple hopping marker is intentional for P1. The eventual character should be a stylized jerboa.
