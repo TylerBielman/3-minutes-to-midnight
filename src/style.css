@@ -7,3 +7,5 @@ dialog{width:min(92vw,390px);max-height:92dvh;overflow:auto;background:#152631;c
 @media (max-height:520px){body{display:block}.game-shell{width:min(100%,360px)}}
 .run-entry{white-space:pre-line;border-top:1px solid #526976;padding-top:12px;line-height:1.55}.tools span{letter-spacing:0}
 details{margin-top:16px;font-size:13px}textarea{width:100%;background:#111820;color:#f2f6f8;border:1px solid #526976;border-radius:7px;font-size:12px;resize:vertical}
+
+#feedback-status{min-height:1.3em;color:#69e6dc}

@@ -2,6 +2,7 @@ import {Game,DEFAULTS,ringBeats,type Settings} from './game.js';
 import {cell,key,placementError,type Cell} from './runway.js';
 import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
 import {readHistory,saveReport,runReport,exportHistory,type Outcome,type RunReport} from './stats.js';
+import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,DEFAULT_EVERY,MAX_FEEDBACK} from './gtx.js';
 import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
@@ -25,6 +26,7 @@ app.innerHTML=`<main class="game-shell">
     <div class="actions"><button value="cancel">Close</button><button id="apply" value="apply">Apply & restart</button></div>
   </form></dialog>
   <dialog id="history"><h2>Your playtest runs</h2><p>Saved on this browser and address only. No automatic uploads. Export the runs to share them for review. Up to 50 runs; saving may retain fewer if storage is full. Play continues while this panel is open.</p><p id="save-status"></p><div id="run-list"></div><div class="actions"><button id="export" type="button">Export runs</button><button id="close-history" type="button">Close</button></div><details id="export-fallback" hidden><summary>Copy the report if the download does not appear</summary><label>Run report<textarea id="report-text" readonly rows="6"></textarea></label></details></dialog>
+  <dialog id="feedback"><form id="feedback-form"><h2>How was it?</h2><p id="feedback-lede"></p><label>Your feedback<textarea id="feedback-text" rows="6" maxlength="${MAX_FEEDBACK}" placeholder="Anything fun, confusing or broken?"></textarea></label><p id="feedback-status" role="status" aria-live="polite"></p><div class="actions"><button id="feedback-skip" type="button">Skip</button><button id="feedback-send" type="submit" disabled>Send</button></div></form></dialog>
 </main>`;
 const canvas=document.querySelector<HTMLCanvasElement>('#game')!,ctx=canvas.getContext('2d')!;
 const dialog=document.querySelector<HTMLDialogElement>('#settings')!;
@@ -65,6 +67,31 @@ document.querySelector('#export')!.addEventListener('click',()=>{
   const link=document.createElement('a');link.href=url;link.download=`3mtm-runs-${new Date().toISOString().replace(/[:.]/g,'-')}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 });
 window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupted'));
+// Gametronyx: a launch from gametronyx.com carries a one-time code in the fragment. Strip it at once, trade it for a
+// session (used only to attribute feedback), and learn the feedback cadence set in admin.
+const GTX_API=import.meta.env.VITE_GTX_API||'https://api.gametronyx.com',BUILD=import.meta.env.VITE_BUILD_SHA||'dev';
+const gtxStore=(()=>{try{return localStorage;}catch{return undefined;}})();
+let feedbackEvery=DEFAULT_EVERY,feedbackRuns=0;
+const handoffCode=readHandoffCode(location.hash);
+if(handoffCode){history.replaceState(history.state,'',location.pathname+location.search);void redeemHandoff(fetch,GTX_API,handoffCode).then(token=>{if(token)saveToken(gtxStore,token);});}
+if(handoffCode||loadToken(gtxStore))void fetchCadence(fetch,GTX_API).then(every=>{if(every)feedbackEvery=every;});
+const feedbackDialog=document.querySelector<HTMLDialogElement>('#feedback')!,feedbackText=document.querySelector<HTMLTextAreaElement>('#feedback-text')!;
+const feedbackSend=document.querySelector<HTMLButtonElement>('#feedback-send')!,feedbackStatus=document.querySelector('#feedback-status')!;
+function promptFeedback(total:number){
+  feedbackRuns=total;feedbackStatus.textContent='';feedbackSend.disabled=!feedbackText.value.trim();
+  document.querySelector('#feedback-lede')!.textContent=`That’s ${total} runs. Anything fun, confusing or broken? Tyler reads every note. It’s posted to GitHub under your Gametronyx username.`;
+  if(!feedbackDialog.open&&!dialog.open&&!historyDialog.open)feedbackDialog.showModal();
+}
+feedbackText.addEventListener('input',()=>{feedbackSend.disabled=!feedbackText.value.trim();});
+document.querySelector('#feedback-skip')!.addEventListener('click',()=>feedbackDialog.close());
+document.querySelector('#feedback-form')!.addEventListener('submit',async event=>{
+  event.preventDefault();const token=loadToken(gtxStore);if(!token||!feedbackText.value.trim())return;
+  feedbackSend.disabled=true;feedbackStatus.textContent='Sending…';
+  const result=await sendFeedback(fetch,GTX_API,token,{text:feedbackText.value,build:BUILD,runs:feedbackRuns,ua:navigator.userAgent,viewport:`${innerWidth}x${innerHeight}`});
+  if(result.ok){feedbackText.value='';feedbackStatus.textContent='Thanks! Sent to Tyler.';setTimeout(()=>feedbackDialog.close(),1200);return;}
+  if(result.expired)saveToken(gtxStore,null);
+  feedbackStatus.textContent=result.message;feedbackSend.disabled=result.expired;
+});
 const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528;
 // Slot centers, spread evenly for 1-3 draft slots.
 const slotX=(i:number)=>195+(i-(game.draft.length-1)/2)*129;
@@ -102,7 +129,7 @@ function origin(p:Cell,slot:number):Cell{
 }
 function cancel(){if(gesture){flashSlot=gesture.slot;flashUntil=performance.now()+650;announce('Returned to your slot.',color.red);gesture=undefined;}}
 canvas.addEventListener('pointerdown',event=>{
-  if(gesture||dialog.open||historyDialog.open)return;event.preventDefault();const p=pointer(event);
+  if(gesture||dialog.open||historyDialog.open||feedbackDialog.open)return;event.preventDefault();const p=pointer(event);
   if(game.over){if(p.y>240&&p.y<385)restart({...settings,seed:Math.floor(Math.random()*0xffffffff)});return;}
   const actor=screen(game.position);
   if(Math.hypot(p.x-actor.x,p.y-actor.y)<25){game.reverse();announce(game.running?'Turning back after this hop.':'Connect your first piece to begin.',color.route);return;}
@@ -253,7 +280,9 @@ function draw(now:number){
 }
 function frame(now:number){
   game.advance(now-lastTime);lastTime=now;
-  if(game.over&&!lastOver){gesture=undefined;announce(`The Ring caught the jerboa. ${game.score} points.`,color.red);lastOver=true;checkpoint('caught');if(historyDialog.open)showRuns();}
+  if(game.over&&!lastOver){gesture=undefined;announce(`The Ring caught the jerboa. ${game.score} points.`,color.red);lastOver=true;checkpoint('caught');if(historyDialog.open)showRuns();
+    // Feedback cadence only counts runs played with a Gametronyx session; the popup lands after the caught screen.
+    if(loadToken(gtxStore)){const {prompt,total}=countCompletedRun(gtxStore,feedbackEvery);if(prompt)setTimeout(()=>promptFeedback(total),1200);}}
   if(game.running&&game.phase!==lastPhase){lastPhase=game.phase;phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}
   for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
     lastPickupSeq=pick.seq;

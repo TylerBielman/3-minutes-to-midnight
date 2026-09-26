@@ -168,3 +168,28 @@ Not added (and why): O4 and P contain a 2×2 block, which would form a tiny loop
 | P6-01 | The node target shrinks in proportion to the Ring's radius: 10 at the start, about 8 at the end of phase 1, 5 at the start of phase 3, never below 2. Nodes already on the board are not deleted early; the pool just stops refilling above the target. | Keeps node density per area of play roughly steady instead of crowding the small late Ring. `Game.nodeTarget`, `TUNING.minNodes`. |
 | P6-02 | Slots are centered and spaced 129 px apart whatever the count; each keeps its tap target size. Tune "Draft slots" and URL `slots`. | `slotX` in `src/main.ts`. |
 | P6-03 | Applies to the starting hand only; later deals can still repeat a shape already in the tray. L and J count as different pieces. Repeats are redrawn from the same seeded piece stream, so a seed still reproduces the same hand. | Constructor in `src/game.ts`. |
+
+## Gametronyx integration — 2026-09-26
+
+Source: Tyler's Gametronyx site brief (gametronyx repo `docs/DESIGN.md` §5.6 and §6, `docs/DECISIONS.md`).
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| G1 | Jerboa is launched from gametronyx.com. The game URL stays public ("launcher-only" gate for now). |
+| G2 | A popup asks for feedback every 3 games played. |
+| G3 | The popup is free text only, with a Skip button. |
+| G4 | Feedback becomes a GitHub issue in this repo, labeled, showing the player's username and never their email. |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| G-01 | A "game played" is a completed run: the Ring caught the jerboa. Restarts and abandoned runs don't count. | Matches "every 3 games played". `countCompletedRun` in `src/gtx.ts`; called from the game-over block in `src/main.ts`. |
+| G-02 | Runs only count, and the popup only appears, when the player arrived from gametronyx.com with a session. Direct visitors never see it. | They have no account to attribute feedback to. |
+| G-03 | The popup opens 1.2 s after the caught screen. The count restarts when it opens, so Send, Skip and closing the tab all wait another N runs. | No nagging; the player sees their result first. `promptFeedback` in `src/main.ts`. |
+| G-04 | The launch code is read from `#gtx_handoff=`, stripped at once, and traded for a token stored as `gtx_auth_token_v1`. The token is used only for feedback. | The code is one-time and valid for 60 s, so a JWT never appears in a URL. |
+| G-05 | The cadence comes from Gametronyx admin (`feedback_every_n_runs`), falling back to 3. The build SHA is attached to each report (`VITE_BUILD_SHA`, set by the deploy workflow). | Tunable without a Jerboa release; reports tie to a build. |
+| G-06 | The API base is fixed at build time (`VITE_GTX_API`, default `https://api.gametronyx.com`). There is no URL override. | A URL override would let a crafted link send the session token elsewhere. |
+
