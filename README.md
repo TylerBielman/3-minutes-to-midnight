@@ -48,3 +48,7 @@ The source-checkout launchers build the current source. The distributed zip uses
 - [Validation and phone playtest](docs/PLAYTEST.md)
 
 Old polygon docking documents are archived. No hammer, powerups, stage progression or smart spawning in P1.
+
+### If the launcher does not show a phone address
+
+Use the refreshed package. Both launchers now use Node to inspect network addresses; they no longer rely on the Windows PowerShell networking commands. The server prints the PC HOTSPOT address first, followed by other network addresses, after successfully binding a free port. Use the exact printed port. If no address is available, it explains how to retry. Address detection alone does not establish phone connectivity.

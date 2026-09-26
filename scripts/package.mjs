@@ -13,6 +13,7 @@ for(const item of ['dist','docs','START_PHONE_TEST.bat','START_PHONE_TEST_HOTEL.
   await cp(join(root,item),join(stage,item),{recursive:true});
 }
 await cp(join(root,'scripts/serve.mjs'),join(stage,'scripts/serve.mjs'));
+await cp(join(root,'scripts/network.mjs'),join(stage,'scripts/network.mjs'));
 const zip=join(release,'3MTM_JERBOA_P1.zip');
 const temporaryZip=join(release,`package-${randomUUID()}.zip`);
 if(process.platform!=='win32')throw new Error('The phone ZIP packager currently requires Windows. npm run build works on any platform.');

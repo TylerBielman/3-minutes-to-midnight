@@ -50,13 +50,6 @@ if not exist "node_modules\" (
 call npm run build
 if errorlevel 1 goto NPM_FAIL
 :READY_TO_SERVE
-echo Finding a free game port...
-set "GAME_PORT="
-for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$reserved=@(3000,5173); foreach($p in 5180..5299){ if($reserved -notcontains $p -and -not (Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue)){ $p; break } }"`) do set "GAME_PORT=%%P"
-if not defined GAME_PORT set "GAME_PORT=5180"
-echo Using port !GAME_PORT!.
-
-echo.
 echo Checking for a Windows Mobile Hotspot...
 call :FIND_HOTSPOT_IP
 if defined PHONE_IP goto HOTSPOT_READY
@@ -79,17 +72,8 @@ if not defined PHONE_IP goto HOTSPOT_NOT_FOUND
 
 :HOTSPOT_READY
 echo.
-echo ============================================================
-echo   ON YOUR PHONE, OPEN:
-echo.
-echo       http://!PHONE_IP!:!GAME_PORT!
-echo.
-echo ============================================================
-echo.
-echo Your phone must be connected to the PC's Mobile Hotspot,
-echo NOT directly to the hotel's Wi-Fi.
-echo.
-echo If Windows Firewall asks, choose Allow for PRIVATE networks.
+echo Your phone must be connected to the PC hotspot.
+echo The phone address will appear below after the server starts.
 echo.
 echo Opening the prototype on this PC too...
 rem Browser opens once the server is ready.
@@ -97,13 +81,13 @@ echo.
 echo Starting server now. KEEP THIS WINDOW OPEN while testing.
 echo To stop later, close this window or press Ctrl+C.
 echo.
-node scripts\serve.mjs --port !GAME_PORT! --open
+node scripts\serve.mjs --auto-port --open
 if errorlevel 1 goto RUN_FAIL
 exit /b 0
 
 :FIND_HOTSPOT_IP
 set "PHONE_IP="
-for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$ips=Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1'}; $h=$ips ^| Where-Object {$_.IPAddress -like '192.168.137.*' -or $_.InterfaceAlias -match 'Local Area Connection|Wi-Fi Direct|Mobile Hotspot'} ^| Sort-Object @{Expression={if($_.IPAddress -like '192.168.137.*'){0}else{1}}} ^| Select-Object -First 1 -ExpandProperty IPAddress; if($h){$h}"`) do set "PHONE_IP=%%I"
+for /f "delims=" %%I in ('node scripts\network.mjs --hotspot') do set "PHONE_IP=%%I"
 exit /b 0
 
 :HOTSPOT_NOT_FOUND

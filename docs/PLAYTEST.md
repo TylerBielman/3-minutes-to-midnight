@@ -46,3 +46,7 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 - Did random points on existing road encourage enjoyable revisiting or passive farming?
 
 Keep rule changes separate from tuning changes. Record new agent assumptions in DECISIONS.md.
+
+## Launcher repair validation
+
+22 tests pass, including address filtering/hotspot prioritization and a real occupied-port retry. The current PC hotspot is detected by the Node helper. The rebuilt ZIP includes the helper and updated launchers. Local hotspot-interface HTTP probing timed out during this session, so detection is verified but phone reachability remains a device check. Existing Node firewall allowances were inspected, not modified.

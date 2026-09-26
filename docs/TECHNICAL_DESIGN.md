@@ -73,3 +73,7 @@ Source checkout launchers rebuild from source. Distributed zip launchers use its
 ## Extension seams
 
 Shape library, group weights, hop rate, node values/count, Ring phase rates, spawn policy and route policy are localized. Keep behavior changes in the pure model and tests. Other road-removal policies, hammers, powerups and stages require explicit design changes; do not implement them as tuning fixes.
+
+## Launcher address repair
+
+`scripts/network.mjs` enumerates non-loopback IPv4 interfaces through Node, excludes unassigned link-local addresses, and prioritizes the standard hotspot subnet / Wi-Fi Direct adapter names. Hotel launcher detection uses this helper. `serve.mjs --auto-port` attempts to bind ports directly and retries occupied ports before printing actual listening URLs. The package includes both scripts. No firewall, VPN or network settings are changed by this repair.
