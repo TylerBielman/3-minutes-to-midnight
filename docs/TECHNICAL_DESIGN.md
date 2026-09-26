@@ -40,13 +40,21 @@ The jerboa's ground center interpolates along the committed edge. Capture occurs
 
 One seed initializes three independent streams (pieces, nodes, navigation). Drawing a piece samples a group, then a uniform member. Rotation and cancelled placement do not consume draws. Swiping or successful placement consumes one new piece.
 
-Nodes spawn uniformly on eligible cells inside the current Ring. Values 1/3/5 are uniform. Existing runway is eligible; the current source cell, committed landing cell and existing node cells are excluded. Node disks must fit fully inside the Ring. Expired or collected nodes replenish; if eligible space is exhausted, the pool may shrink. No path reachability or helpfulness filter is used.
+Nodes spawn uniformly on eligible cells inside the current Ring. Values 1–5 are drawn from the current phase's weights in `TUNING.phaseValueWeights`, shifting toward 5s each phase. The first two spawns of a run are 5s. Existing runway is eligible; the current source cell, committed landing cell and existing node cells are excluded. Node disks must fit fully inside the Ring. Expired or collected nodes replenish; if eligible space is exhausted, the pool may shrink. No path reachability or helpfulness filter is used.
 
 The engine has a `spawn: 'uncovered'` option as a future experimental seam, but the shipped UI/default always uses `random`. No smart behavior is implemented.
 
+## x2 powerup
+
+At most one x2 node exists. It spawns on a random eligible cell once the run clock passes `boostFirstMs`, and again `boostRespawnMs` after the previous one is collected or overtaken by the Ring, never during an active boost. Landing on it sets `boostUntil = elapsed + boostMs`. Each hop stores its own duration, fixed when the hop begins: `hopMs / boostSpeed` while boosted. Point collections while boosted score double. `pickups` exposes a short sequence-numbered log so the renderer can play bursts without reading the event timeline.
+
+## Ring pulse
+
+`ringBeats(elapsed)` integrates beats across phases with the periods in `TUNING.ringPulseMs`, so the pulse stays continuous and simply quickens at each phase boundary. The renderer adds the phase-change surge. The pulse is presentation only.
+
 ## Input and feedback
 
-One captured pointer is active at a time. In the draft, a short stationary release rotates; a downward swipe of at least 30 logical pixels, with vertical displacement greater than 1.15× horizontal displacement, arms discard. Returning upward before release cancels that discard. Upward departure of more than 24 logical pixels changes the gesture to a drag and locks orientation. The ghost uses full board scale and an upward offset. Invalid cells are red with an X and a reason. Valid cells are green/cyan. Once drag mode starts it cannot become a discard. Release re-evaluates the gesture even if move events were coalesced. Cancelling a drag or releasing illegally preserves the original slot entry and flashes its frame.
+One captured pointer is active at a time. In the draft, a short stationary release rotates; once the run has started, a downward swipe of at least 30 logical pixels, with vertical displacement greater than 1.15× horizontal displacement, arms discard. Returning upward before release cancels that discard. Upward departure of more than 24 logical pixels changes the gesture to a drag and locks orientation. The ghost uses full board scale and an upward offset. Invalid cells are red with an X and a reason. Valid cells are green/cyan. Once drag mode starts it cannot become a discard. Release re-evaluates the gesture even if move events were coalesced. Cancelling a drag or releasing illegally preserves the original slot entry and flashes its frame.
 
 The road is neutral; upcoming route is cyan with arrows. Traversed cells lose route color; planned return legs light again. Gold disks show node values. The Ring and outside shading remain separate from placement legality. A small ground marker defines the jerboa's collision footprint and ears identify the placeholder.
 

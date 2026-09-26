@@ -22,7 +22,7 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 ## Five-minute phone pass
 
 1. Unzip into a fresh folder and run START_PHONE_TEST_HOTEL.bat. Join the PC hotspot and use its printed phone URL.
-2. Before building: rotate all three slots. Swipe one downward. The clock should remain at 3:00.
+2. Before building: rotate all three slots. Swipe one downward: it should refuse (red flash, "Discards unlock after your first placement"). The clock should remain at 3:00.
 3. Drag onto the start square to force overlap. Check red feedback and return to the same slot/orientation.
 4. Place a connected piece. Check that only its slot refills and the run starts.
 5. Build toward a gold node. Placement alone should not score; the jerboa landing there should.

@@ -74,7 +74,7 @@ test('navigation ignores Ring; large elapsed steps still detect death between la
  g.previous={x:16,y:9};g.visited=new Set(g.board);g.draft[0]={shapeId:'Dot',turns:0};g.place(0,{x:18,y:9});g.advance(60);assert.ok(!g.over);g.advance(10000);assert.equal(g.over,true);
 });
 test('deterministic draw groups approximate 70 / 15 / 15 and rotations do not advance random draws',()=>{
- const a=new Game({seed:19}),b=new Game({seed:19});a.rotate(0);a.discard(0);b.discard(0);assert.deepEqual(a.draft[0],b.draft[0]);
+ const a=new Game({seed:19}),b=new Game({seed:19});a.running=b.running=true;a.rotate(0);a.discard(0);b.discard(0);assert.deepEqual(a.draft[0],b.draft[0]);
  const counts={common:0,small:0,large:0};for(let i=0;i<10000;i++){a.discard(0);counts[SHAPES.find(s=>s.id===a.draft[0].shapeId).group]++;}
  assert.ok(counts.common>6700&&counts.common<7300);assert.ok(counts.small>1300&&counts.small<1700);assert.ok(counts.large>1300&&counts.large<1700);
 });

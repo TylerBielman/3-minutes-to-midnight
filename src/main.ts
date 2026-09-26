@@ -1,4 +1,4 @@
-import {Game,DEFAULTS,type Settings} from './game.js';
+import {Game,DEFAULTS,ringBeats,type Settings} from './game.js';
 import {cell,key,placementError,type Cell} from './runway.js';
 import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
 import {readHistory,saveReport,runReport,exportHistory,type Outcome,type RunReport} from './stats.js';
@@ -6,7 +6,7 @@ import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML=`<main class="game-shell">
-  <div class="tools"><span>P1 · PLAYTEST 2</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
+  <div class="tools"><span>P1 · PLAYTEST 3</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
   <canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
@@ -16,6 +16,8 @@ app.innerHTML=`<main class="game-shell">
     <label>Active point nodes<input id="nodes" type="number" min="1" max="20"></label>
     <label>Runway square limit (0 = unlimited)<input id="limit" type="number" min="0" max="961"></label>
     <label>Ring hit radius (cells)<select id="hit"><option value="0.1">Forgiving · 0.10</option><option value="0.24">Original · 0.24</option><option value="0">Center only · 0</option></select></label>
+    <label>x2 speed multiplier<input id="boost-speed" type="number" min="1" max="3" step="0.1"></label>
+    <label>x2 duration (seconds)<input id="boost-sec" type="number" min="0.5" max="30" step="0.5"></label>
     <label>Random seed<input id="seed" type="number" min="0" max="4294967295"></label>
     <label class="check"><input id="debug" type="checkbox"> Show designer grid</label>
     <div class="actions"><button value="cancel">Close</button><button id="apply" value="apply">Apply & restart</button></div>
@@ -27,7 +29,7 @@ const dialog=document.querySelector<HTMLDialogElement>('#settings')!;
 const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
 const query=new URLSearchParams(location.search);
 const numeric=(name:string,fallback:number)=>{const value=Number(query.get(name));return query.has(name)&&Number.isFinite(value)?value:fallback;};
-let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',6),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10)};
+let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',6),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000};
 let game=new Game(settings),debug=query.has('debug');
 const historyDialog=document.querySelector<HTMLDialogElement>('#history')!;
 // Phone testing uses HTTP over LAN, where randomUUID may be unavailable.
@@ -62,10 +64,21 @@ document.querySelector('#export')!.addEventListener('click',()=>{
 });
 window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupted'));
 const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528,SLOTS=[66,195,324];
-const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5'};
+const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff'};
+// Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
+const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09};
 let message='Tap a piece to rotate. Drag up to start.',messageColor=color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
+let lastPhase=1,phaseSurgeAt=-Infinity,lastPickupSeq=0;
+type Particle={x:number,y:number,vx:number,vy:number,born:number,tint:string};
+type Floater={x:number,y:number,label:string,born:number,tint:string};
+let particles:Particle[]=[],floaters:Floater[]=[];
+function burst(at:Cell,tint:string,label:string,now:number,count=FX.burstParticles){
+  const c=screen(at);
+  for(let i=0;i<count;i++){const a=i/count*Math.PI*2+Math.random()*.4,v=FX.burstSpeed*(.6+Math.random()*.8);particles.push({x:c.x,y:c.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,born:now,tint});}
+  floaters.push({x:c.x,y:c.y-8,label,born:now,tint});
+}
 type Gesture={id:number,slot:number,start:Cell,now:Cell,mode:GestureMode,origin?:Cell};
 let gesture:Gesture|undefined;
 function announce(text:string,tint=color.muted){message=text;messageColor=tint;document.querySelector('#announcement')!.textContent=text;}
@@ -95,7 +108,8 @@ canvas.addEventListener('pointerdown',event=>{
 canvas.addEventListener('pointermove',event=>{
   if(!gesture||gesture.id!==event.pointerId)return;event.preventDefault();gesture.now=pointer(event);
   gesture.mode=gestureMode(gesture.mode,gesture.now.x-gesture.start.x,gesture.now.y-gesture.start.y);
-  if(gesture.mode==='discard'){message=downwardSwipe(gesture.now.x-gesture.start.x,gesture.now.y-gesture.start.y)?'RELEASE TO DISCARD ↓':'Pull down to discard · return to cancel';messageColor=color.points;}
+  if(gesture.mode==='discard'&&!game.running){message='Discards unlock after your first placement';messageColor=color.red;}
+  else if(gesture.mode==='discard'){message=downwardSwipe(gesture.now.x-gesture.start.x,gesture.now.y-gesture.start.y)?'RELEASE TO DISCARD ↓':'Pull down to discard · return to cancel';messageColor=color.points;}
   if(gesture.mode==='drag'){
     gesture.origin=origin(gesture.now,gesture.slot);
     const error=placementError(game.board,game.cells(gesture.slot,gesture.origin),game.settings.grid);
@@ -110,7 +124,10 @@ canvas.addEventListener('pointerup',event=>{
   const dx=p.x-g.start.x,dy=p.y-g.start.y;
   const mode=gestureMode(g.mode,dx,dy);
   if(mode!=='drag'){
-    if(mode==='discard'&&downwardSwipe(dx,dy)){game.discard(g.slot);announce('Discarded ↓ A new piece is ready.');}
+    if(mode==='discard'&&downwardSwipe(dx,dy)){
+      if(game.discard(g.slot))announce('Discarded ↓ A new piece is ready.');
+      else{flashSlot=g.slot;flashUntil=performance.now()+650;announce('Discards unlock after your first placement.',color.red);}
+    }
     else if(mode==='pending'&&Math.hypot(dx,dy)<16){game.rotate(g.slot);announce('Rotated. Drag up when ready.');}
     else{flashSlot=g.slot;flashUntil=performance.now()+650;announce('Returned to your slot.');}
   }else{
@@ -122,16 +139,17 @@ canvas.addEventListener('pointerup',event=>{
 });
 canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);window.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();checkpoint();}});
-function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;announce('Tap a piece to rotate. Drag up to start.');}
+function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];announce('Tap a piece to rotate. Drag up to start.');}
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
 document.querySelector('#tune')!.addEventListener('click',()=>{
   cancel();input('duration').value=String(game.settings.duration);input('grid').value=String(game.settings.grid);input('hop').value=String(game.settings.hopMs);
   input('nodes').value=String(game.settings.nodeCount);input('seed').value=String(game.settings.seed);input('debug').checked=debug;dialog.showModal();
   input('limit').value=String(game.settings.roadLimit);input('hit').value=String(game.settings.hitRadius);
+  input('boost-speed').value=String(game.settings.boostSpeed);input('boost-sec').value=String(game.settings.boostMs/1000);
 });
 document.querySelector('#apply')!.addEventListener('click',event=>{
   event.preventDefault();if(!dialog.querySelector('form')!.reportValidity())return;
-  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value)});dialog.close();
+  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000});dialog.close();
 });
 function draw(now:number){
   const dpr=Math.min(devicePixelRatio||1,3);if(canvas.width!==W*dpr){canvas.width=W*dpr;canvas.height=H*dpr;}
@@ -140,6 +158,10 @@ function draw(now:number){
   const seconds=Math.max(0,Math.ceil((game.settings.duration*1000-game.elapsed)/1000));
   text(`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,380,38,23,color.ink,'right');
   text(game.running?`PHASE ${game.phase} / 3`:game.over?'CAUGHT':'READY',195,39,11,color.muted,'center');
+  if(game.boosted){
+    const left=(game.boostUntil-game.elapsed)/game.settings.boostMs;
+    text(`x2 · ${((game.boostUntil-game.elapsed)/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
+  }
   text(`${game.board.size}${game.settings.roadLimit?` / ${game.settings.roadLimit}`:''} SQUARES${game.settings.roadLimit&&game.board.size>game.settings.roadLimit?' · PROTECTED':''}`,195,56,9,color.muted,'center');
   ctx.save();ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.clip();
   if(debug){ctx.strokeStyle='#25343e';ctx.lineWidth=.5;for(let i=0;i<=game.settings.grid;i++){
@@ -154,22 +176,44 @@ function draw(now:number){
     const a=screen(route[i-1]),b=screen(route[i]),dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len;
     const x=a.x+dx*.6,y=a.y+dy*.6;ctx.beginPath();ctx.moveTo(x-ux*4-uy*3,y-uy*4+ux*3);ctx.lineTo(x,y);ctx.lineTo(x-ux*4+uy*3,y-uy*4-ux*3);ctx.stroke();
   }
-  for(const [k,value] of game.nodes){const c=screen(cell(k));ctx.fillStyle=color.points;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.34,0,Math.PI*2);ctx.fill();text(String(value),c.x,c.y,Math.max(10,scale()*.52),'#21211b','center');}
+  if(game.boostNode){
+    const c=screen(game.boostNode),glow=.5+.5*Math.sin(now/180);
+    ctx.save();ctx.shadowColor=color.boost;ctx.shadowBlur=6+8*glow;ctx.fillStyle=color.boost;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.4,0,Math.PI*2);ctx.fill();ctx.restore();
+    text('x2',c.x,c.y,Math.max(10,scale()*.5),'#1d1026','center');
+  }
+  const pointTint=game.boosted?color.boost:color.points;
+  for(const [k,value] of game.nodes){const c=screen(cell(k));ctx.fillStyle=pointTint;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.34,0,Math.PI*2);ctx.fill();text(String(value),c.x,c.y,Math.max(10,scale()*.52),'#21211b','center');}
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
-  ctx.strokeStyle=color.ring;ctx.lineWidth=3;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.stroke();
+  // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
+  const phaseIndex=game.phase-1,beat=game.running?Math.pow(1-(ringBeats(game.elapsed,game.settings)%1),2.2):0;
+  ctx.save();ctx.strokeStyle=color.ring;ctx.lineWidth=3+beat*FX.pulseWidth[phaseIndex];ctx.shadowColor=color.ring;ctx.shadowBlur=beat*FX.pulseGlow[phaseIndex];
+  ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.stroke();
+  if(beat>.05){ctx.globalAlpha=beat*.45;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius-(1-beat)*scale()*1.2),0,Math.PI*2);ctx.stroke();}
+  ctx.restore();
+  const surge=(now-phaseSurgeAt)/FX.phaseSurgeMs;
+  if(surge>=0&&surge<1){
+    ctx.save();ctx.globalAlpha=1-surge;ctx.strokeStyle=color.ring;ctx.lineWidth=6*(1-surge)+1;ctx.shadowColor=color.ring;ctx.shadowBlur=24;
+    ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius-surge*scale()*4),0,Math.PI*2);ctx.stroke();
+    text(`PHASE ${game.phase}`,195,BOARD_Y+BOARD_SIZE/2-12,30,color.ring,'center');text('THE RING QUICKENS',195,BOARD_Y+BOARD_SIZE/2+18,13,color.ring,'center');
+    ctx.restore();
+  }
   if(gesture?.mode==='drag'&&gesture.origin){
     const cells=game.cells(gesture.slot,gesture.origin),invalid=!!placementError(game.board,cells,game.settings.grid);
     for(const p of cells)square(p,invalid?'#b6264a':'#368776',invalid?color.red:color.route);
     if(invalid){const p=screen(cells[0]);text('×',p.x,p.y,24,color.ink,'center');}
   }
-  const p=screen(game.position),hopT=game.hop?game.hop.elapsed/game.settings.hopMs:(now%700)/700;
+  const p=screen(game.position),hopT=game.hop?game.hop.elapsed/game.hop.duration:(now%700)/700;
   const bounce=game.over?0:Math.sin(hopT*Math.PI)*5;
   ctx.fillStyle='#080c1099';ctx.beginPath();ctx.ellipse(p.x,p.y+3,7,3,0,0,Math.PI*2);ctx.fill();
   // Fixed ground marker defines collision. Ears and visual bounce are decorative.
   ctx.strokeStyle=game.reverseQueued?color.points:color.ink;ctx.lineWidth=1;ctx.beginPath();ctx.arc(p.x,p.y,game.settings.hitRadius*scale(),0,Math.PI*2);ctx.stroke();
-  ctx.fillStyle=game.over?color.red:color.ink;ctx.beginPath();ctx.arc(p.x,p.y-bounce,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=game.over?color.red:game.boosted?color.boost:color.ink;ctx.beginPath();ctx.arc(p.x,p.y-bounce,5,0,Math.PI*2);ctx.fill();
   ctx.lineWidth=2;ctx.strokeStyle=color.ink;ctx.beginPath();ctx.moveTo(p.x-2,p.y-bounce-3);ctx.lineTo(p.x-3,p.y-bounce-9);ctx.moveTo(p.x+2,p.y-bounce-3);ctx.lineTo(p.x+4,p.y-bounce-9);ctx.stroke();
+  particles=particles.filter(q=>now-q.born<FX.burstMs);floaters=floaters.filter(f=>now-f.born<FX.burstMs*1.4);
+  for(const q of particles){const t=now-q.born,k=t/FX.burstMs;ctx.globalAlpha=1-k;ctx.fillStyle=q.tint;ctx.beginPath();ctx.arc(q.x+q.vx*t,q.y+q.vy*t,3*(1-k)+1,0,Math.PI*2);ctx.fill();}
+  for(const f of floaters){const k=(now-f.born)/(FX.burstMs*1.4);ctx.globalAlpha=1-k*k;text(f.label,f.x,f.y-k*26,15+4*(1-k),f.tint,'center');}
+  ctx.globalAlpha=1;
   ctx.restore();
   text('TAP TO ROTATE · DRAG UP · SWIPE DOWN ↓ TO DISCARD',195,469,10,color.muted,'center');
   game.draft.forEach((draft,i)=>{
@@ -180,9 +224,9 @@ function draw(now:number){
       const unit=Math.min(scale(),96/width,54/height),left=SLOTS[i]-width*unit/2,top=DRAFT_Y-8-height*unit/2;
       cells.forEach(c=>{ctx.fillStyle='#8eabb9';ctx.fillRect(left+c.x*unit+.7,top+c.y*unit+.7,unit-1.4,unit-1.4);});
     }
-    text(active&&gesture?.mode==='discard'?'DISCARD ↓':active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,SLOTS[i],558,11,color.muted,'center');
+    text(active&&gesture?.mode==='discard'?(game.running?'DISCARD ↓':'LOCKED'):active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,SLOTS[i],558,11,color.muted,'center');
   });
-  text(message,195,591,11,messageColor,'center');text('CYAN = HIS ROUTE     GOLD = POINTS     TAP HIM = REVERSE',195,613,10,color.muted,'center');
+  text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD POINTS · VIOLET x2 · TAP HIM = REVERSE',195,613,10,color.muted,'center');
   if(game.over){
     ctx.fillStyle='#09121bba';ctx.fillRect(0,BOARD_Y,W,BOARD_SIZE);
     roundRect(34,222,322,167,18,'#182630','#526976');text('THE RING CAUGHT HIM',195,251,17,color.ink,'center');
@@ -194,6 +238,12 @@ function draw(now:number){
 function frame(now:number){
   game.advance(now-lastTime);lastTime=now;
   if(game.over&&!lastOver){gesture=undefined;announce(`The Ring caught the jerboa. ${game.score} points.`,color.red);lastOver=true;checkpoint('caught');if(historyDialog.open)showRuns();}
+  if(game.running&&game.phase!==lastPhase){lastPhase=game.phase;phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}
+  for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
+    lastPickupSeq=pick.seq;
+    if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${game.settings.boostMs/1000}s`,color.boost);}
+    else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
+  }
   if(game.running&&now-lastSave>5000)checkpoint();
   draw(now);requestAnimationFrame(frame);
 }

@@ -73,3 +73,29 @@ Tyler requested more forgiving near misses, removal around 25 squares, better zi
 | P2-05 | Downward swipe threshold 30 logical pixels; stronger vertical than horizontal intent. Upward drag locks out discard. Pull back before release to cancel. | Easier thumb movement without accidentally discarding a returned drag. |
 | P2-06 | Local summaries plus action/hop events; up to 50 runs, 5-second checkpoints, JSON export. No cloud/account. | Phone reports must be exported and shared; I cannot automatically see remote play. |
 | P2-07 | Count escaped near misses only after entering .5-cell danger margin and returning beyond .75. Track capture separately. | Avoid calling every fatal approach a successful near miss. |
+
+## Playtest 3 — 2026-09-26
+
+Tyler requested stronger Ring tension, pickup feedback, phase-weighted point values, a pre-start discard lock and the first powerup. Supersedes U17 (uniform 1/3/5) and the "no powerups" note; U08's reroll now unlocks with the clock.
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| U22 | The Ring pulses; pulses speed up each time the phase changes. |
+| U23 | A small happy burst plays when a point node is collected. |
+| U24 | Point values are 1–5. Phase 1 makes 5s rare; each later phase has fewer 1s and more 5s. The starting board always has two 5s. |
+| U25 | Swipe-down discard is disabled until the first placement starts the timer. |
+| U26 | x2 powerup node in its own color: speeds the jerboa up (tunable, default 1.4×) and doubles points for a tunable duration (default 5 s). Point nodes show the x2 color while boosted. |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P3-01 | Value weights for 1/2/3/4/5: phase 1 30/28/22/14/6, phase 2 15/20/25/22/18, phase 3 6/12/22/28/32 | Phase 1 has 6% 5s; phase 3 has 32%. New spawns use the current phase; existing nodes keep their value. `TUNING.phaseValueWeights`. |
+| P3-02 | The two starting 5s are the first two nodes spawned, placed randomly like any other node | Keeps U14 random spawning. Other opening nodes can also roll 5 (rare). `TUNING.startingFives`. |
+| P3-03 | Ring heartbeat period 1.4 s / 0.9 s / 0.55 s, stronger glow each phase; a one-off orange shockwave plus a "PHASE n · THE RING QUICKENS" banner on each phase change. Ring stays still before the run starts | `TUNING.ringPulseMs`, `FX` in `src/main.ts`. Presentation only; Ring speed is unchanged. |
+| P3-04 | Burst = 14 particles plus a floating "+N" label, gold or violet when boosted; the x2 pickup gets a larger violet burst | `FX` in `src/main.ts`. |
+| P3-05 | x2 color violet `#c77dff`. At most one x2 on the board; the first appears 10 s into the run and the next 15 s after the previous one is collected or lost to the Ring. It never spawns during an active boost and is extra to the point-node count | `TUNING.boostFirstMs`, `boostRespawnMs`. Spawns on the same random eligible cells as nodes. |
+| P3-06 | Speed-up applies from the next hop after landing on x2; a hop already in flight when the boost ends finishes at boosted speed. Boost time is game time. Nodes show their base number in violet; the burst shows the doubled amount | Avoids mid-hop position jumps. Tune exposes speed multiplier and duration; URL `boost` and `boostSec`. |
+| P3-07 | A locked swipe-down flashes the slot red and shows "Discards unlock after your first placement". Rotation stays free before the start | `Game.discard` returns false before the run starts. |

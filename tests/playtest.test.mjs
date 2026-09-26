@@ -56,7 +56,7 @@ test('forgiving footprint survives a corner which catches original footprint, bu
   assert.equal(a.over,false);assert.equal(b.over,true);a.advance(10000);assert.equal(a.over,true);
 });
 test('run reports preserve actionable counters, events and settings without mutating simulation',()=>{
-  const g=new Game({seed:42});g.rotate(0);g.discard(0);dot(g,10,9);g.advance(100);g.reverse();g.advance(350);
+  const g=new Game({seed:42});g.rotate(0);dot(g,10,9);g.discard(0);g.advance(100);g.reverse();g.advance(350);
   g.draft[0]={shapeId:'Dot',turns:0};g.place(0,{x:9,y:9});
   const r=runReport(g,'id','2026-09-25T00:00:00Z','active');
   assert.equal(r.rotations,1);assert.equal(r.discards,1);assert.equal(r.reversals,1);assert.equal(r.hops,1);assert.equal(r.invalidDrops,1);
