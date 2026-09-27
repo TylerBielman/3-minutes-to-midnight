@@ -9,3 +9,58 @@ dialog{width:min(92vw,390px);max-height:92dvh;overflow:auto;background:#152631;c
 details{margin-top:16px;font-size:13px}textarea{width:100%;background:#111820;color:#f2f6f8;border:1px solid #526976;border-radius:7px;font-size:12px;resize:vertical}
 
 #feedback-status{min-height:1.3em;color:#69e6dc}
+
+/* End-of-run screen: celebration, leaderboard and Play again over the finished board (src/finale.ts). */
+.stage{position:relative;container-type:inline-size}
+.finale{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;gap:5px;padding:14px 14px 12px;overflow:hidden;text-align:center;background:radial-gradient(120% 50% at 50% 0%,#ffdc7322,transparent 70%),#09121beb;animation:finale-in .35s ease-out}
+.finale[hidden]{display:none}
+.finale[data-tier=top],.finale[data-tier=best],.finale[data-tier=first]{background:radial-gradient(140% 62% at 50% 0%,#ffdc7345,transparent 72%),#09121beb}
+.finale p,.finale h2,.finale h3{margin:0}
+.finale-caught{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#f5a84a}
+.finale-headline{min-height:32px;font-size:24px;line-height:32px;font-weight:800;letter-spacing:.01em;color:#f2f6f8}
+.finale:not(.waiting) .finale-headline{animation:finale-pop .55s cubic-bezier(.2,1.5,.4,1)}
+.finale[data-tier=top] .finale-headline,.finale[data-tier=best] .finale-headline,.finale[data-tier=first] .finale-headline{color:#ffdc73;text-shadow:0 0 18px #ffdc7399}
+.finale[data-tier=tied] .finale-headline,.finale[data-tier=close] .finale-headline{color:#69e6dc;text-shadow:0 0 14px #69e6dc66}
+.finale-score{display:flex;flex-direction:column;align-items:center;line-height:1}
+#finale-points{font-size:64px;font-weight:800;color:#ffdc73;text-shadow:0 0 24px #ffdc7366;font-variant-numeric:tabular-nums}
+.finale-score small{margin-top:2px;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:#a9bac5}
+.finale-stats{font-size:13px;color:#a9bac5}
+.finale-detail{padding:5px 12px;border-radius:999px;background:#243946;color:#d5e2e9;font-size:13px;font-weight:600}
+.finale-detail:empty{display:none}
+.finale[data-tier=top] .finale-detail,.finale[data-tier=best] .finale-detail,.finale[data-tier=first] .finale-detail{background:#ffdc7326;color:#ffdc73}
+.finale-board{width:100%;flex:1;min-height:0;display:flex;flex-direction:column;margin-top:4px;padding:10px 8px 8px;background:#152631d9;border:1px solid #526976;border-radius:14px;text-align:left}
+.finale-board h3{padding:0 6px 6px;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#a9bac5}
+.finale-board ol{position:relative;flex:0 1 auto;min-height:0;overflow:auto;margin:0;padding:0;list-style:none}
+.finale-board li{position:relative;display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:6px;min-height:30px;padding:3px 8px;border-radius:8px;font-size:14px;overflow:hidden;animation:finale-row .35s ease-out calc(var(--i,0) * 55ms + 120ms) both}
+.finale-board .rank{font-size:13px;color:#a9bac5;font-variant-numeric:tabular-nums}
+.finale-board .name{display:flex;align-items:center;min-width:0}.finale-board .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.finale-board[data-source=local] .name{font-size:13px;color:#b2c7d2}
+.finale-board .score{font-weight:700;color:#ffdc73;font-variant-numeric:tabular-nums}
+.finale-board li.me{background:linear-gradient(90deg,#ffdc7342,#ffdc7314);box-shadow:inset 0 0 0 1px #ffdc73b0;font-weight:700}
+.finale-board li.me .name,.finale-board li.me .rank{color:#fff}
+.finale-board li.me::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,#ffffff40 50%,transparent 70%);transform:translateX(-100%);animation:finale-shimmer 1.1s ease-in-out calc(var(--i,0) * 55ms + 600ms) 2}
+.finale-board .name b{flex:none;margin-left:6px;padding:1px 5px;border-radius:4px;background:#ffdc73;color:#1b1a12;font-size:9px;letter-spacing:.08em;vertical-align:2px}
+.finale-board li.gap{display:block;min-height:0;padding:0;text-align:center;color:#6f8491;line-height:14px}
+.finale-board li.empty{display:block;padding:10px 6px;font-size:13px;color:#a9bac5}
+.finale-wait{display:none;padding:10px 6px;font-size:13px;color:#69e6dc;animation:finale-blink 1s ease-in-out infinite}
+.finale.waiting .finale-wait{display:block}
+.finale-note{padding:6px 6px 0;font-size:12px;line-height:1.35;color:#a9bac5}
+.finale-note:empty{display:none}
+.play-again{width:100%;min-height:54px;margin-top:6px;border:0;border-radius:999px;background:#ffdc73;color:#1b1a12;font-size:18px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;animation:finale-arm .7s ease-out both,finale-glow 2.2s ease-in-out 2.4s infinite}
+.play-again:active{transform:scale(.98)}
+.confetti{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
+.confetti i{position:absolute;top:-14px;width:7px;height:11px;border-radius:2px;opacity:0;animation:finale-confetti var(--fall) cubic-bezier(.25,.6,.5,1) var(--delay) forwards}
+@keyframes finale-in{from{opacity:0}to{opacity:1}}
+@keyframes finale-pop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.12);opacity:1}100%{transform:scale(1)}}
+@keyframes finale-row{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes finale-shimmer{to{transform:translateX(100%)}}
+@keyframes finale-blink{50%{opacity:.4}}
+@keyframes finale-arm{from{opacity:.4}to{opacity:1}}
+@keyframes finale-glow{0%,100%{box-shadow:0 0 0 0 #ffdc7300}50%{box-shadow:0 0 20px 2px #ffdc7380}}
+@keyframes finale-confetti{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:.85;transform:translate(var(--drift),700px) rotate(var(--spin))}}
+/* Narrow phones (the stage is shorter too): tighten so ten rows and the player's own row still fit. */
+@container (max-width:385px){
+  .finale{gap:3px;padding:12px 12px 10px}.finale-headline{min-height:28px;font-size:22px;line-height:28px}#finale-points{font-size:52px}
+  .finale-detail{padding:4px 10px;font-size:12px}.finale-board{padding:8px 6px 6px}.finale-board li{min-height:25px;padding:2px 8px;font-size:13px}.play-again{min-height:50px}
+}
+@media (prefers-reduced-motion:reduce){.finale,.finale *,.finale *::after{animation:none!important}}

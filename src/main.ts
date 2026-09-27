@@ -1,14 +1,22 @@
 import {Game,DEFAULTS,ringBeats,type Settings} from './game.js';
 import {cell,key,placementError,type Cell} from './runway.js';
 import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
-import {readHistory,saveReport,runReport,exportHistory,type Outcome,type RunReport} from './stats.js';
-import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,DEFAULT_EVERY,MAX_FEEDBACK} from './gtx.js';
+import {readHistory,saveReport,runReport,exportHistory,BUILD as RUN_BUILD,type Outcome,type RunReport} from './stats.js';
+import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,scoreRun,submitScore,queueScore,flushPending,DEFAULT_EVERY,MAX_FEEDBACK,type ScoreResult} from './gtx.js';
+import {isRanked,localBoard,cheer} from './leaderboard.js';
+import {createFinale} from './finale.js';
 import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML=`<main class="game-shell">
   <div class="tools"><span>P1 · PLAYTEST 6</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
-  <canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
+  <div class="stage"><canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
+    <section id="finale" class="finale" hidden aria-labelledby="finale-caught finale-headline"><div id="finale-confetti" class="confetti" aria-hidden="true"></div>
+      <p id="finale-caught" class="finale-caught">The Ring caught him</p><h2 id="finale-headline" class="finale-headline"></h2>
+      <p class="finale-score"><span id="finale-points">0</span><small>points</small></p><p id="finale-stats" class="finale-stats"></p><p id="finale-detail" class="finale-detail"></p>
+      <div id="finale-board" class="finale-board"><h3 id="finale-board-title">Leaderboard</h3><p class="finale-wait">Posting your score…</p><ol id="finale-rows"></ol><p id="finale-note" class="finale-note"></p></div>
+      <button id="play-again" class="play-again" type="button">Play again</button>
+    </section></div>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
     <label>Run length<select id="duration"><option value="60">1 minute</option><option value="120">2 minutes</option><option value="180">3 minutes</option></select></label>
@@ -68,19 +76,20 @@ document.querySelector('#export')!.addEventListener('click',()=>{
 });
 window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupted'));
 // Gametronyx: a launch from gametronyx.com carries a one-time code in the fragment. Strip it at once, trade it for a
-// session (used only to attribute feedback), and learn the feedback cadence set in admin.
+// session (used only to attribute feedback and scores), and learn the feedback cadence set in admin.
 const GTX_API=import.meta.env.VITE_GTX_API||'https://api.gametronyx.com',BUILD=import.meta.env.VITE_BUILD_SHA||'dev';
 const gtxStore=(()=>{try{return localStorage;}catch{return undefined;}})();
-let feedbackEvery=DEFAULT_EVERY,feedbackRuns=0;
+let feedbackEvery=DEFAULT_EVERY,feedbackRuns=0,feedbackDue=0;
 const handoffCode=readHandoffCode(location.hash);
-if(handoffCode){history.replaceState(history.state,'',location.pathname+location.search);void redeemHandoff(fetch,GTX_API,handoffCode).then(token=>{if(token)saveToken(gtxStore,token);});}
+if(handoffCode){history.replaceState(history.state,'',location.pathname+location.search);void redeemHandoff(fetch,GTX_API,handoffCode).then(token=>{if(token){saveToken(gtxStore,token);void flushPending(fetch,GTX_API,token,gtxStore);}});}
 if(handoffCode||loadToken(gtxStore))void fetchCadence(fetch,GTX_API).then(every=>{if(every)feedbackEvery=every;});
 const feedbackDialog=document.querySelector<HTMLDialogElement>('#feedback')!,feedbackText=document.querySelector<HTMLTextAreaElement>('#feedback-text')!;
 const feedbackSend=document.querySelector<HTMLButtonElement>('#feedback-send')!,feedbackStatus=document.querySelector('#feedback-status')!;
-function promptFeedback(total:number){
+function promptFeedback(total:number):boolean{
+  if(feedbackDialog.open||dialog.open||historyDialog.open)return false;
   feedbackRuns=total;feedbackStatus.textContent='';feedbackSend.disabled=!feedbackText.value.trim();
   document.querySelector('#feedback-lede')!.textContent=`That’s ${total} runs. Anything fun, confusing or broken? Tyler reads every note. It’s posted to GitHub under your Gametronyx username.`;
-  if(!feedbackDialog.open&&!dialog.open&&!historyDialog.open)feedbackDialog.showModal();
+  feedbackDialog.showModal();return true;
 }
 feedbackText.addEventListener('input',()=>{feedbackSend.disabled=!feedbackText.value.trim();});
 document.querySelector('#feedback-skip')!.addEventListener('click',()=>feedbackDialog.close());
@@ -92,6 +101,26 @@ document.querySelector('#feedback-form')!.addEventListener('submit',async event=
   if(result.expired)saveToken(gtxStore,null);
   feedbackStatus.textContent=result.message;feedbackSend.disabled=result.expired;
 });
+// End of run: the celebration and leaderboard replace the caught panel. Ranked runs post under the Gametronyx username;
+// without a session, or when that fails, the board is this device's own ranked runs.
+const finale=createFinale(document.querySelector<HTMLElement>('#finale')!,()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
+const SCORE_NOTES:Record<Exclude<ScoreResult,{ok:true}>['reason'],string>={
+  expired:'Your Gametronyx session has ended. Launch Jerboa from gametronyx.com to post scores.',
+  offline:'Couldn’t reach Gametronyx. This score will post next time.',limited:'Gametronyx is busy. This score will post next time.',
+  unavailable:'The Gametronyx leaderboard isn’t open yet.',rejected:'This run couldn’t be ranked.'};
+async function finishRun(){
+  const id=runId,report=memoryRuns.get(id)??runReport(game,id,startedAt,'caught'),ranked=isRanked(report.settings,DEFAULTS),token=loadToken(gtxStore);
+  finale.show({id,score:report.score,nodes:report.nodes,seconds:report.seconds,escapes:report.nearMisses});
+  let board=localBoard(reports(),id,RUN_BUILD,DEFAULTS),note=!ranked?'Only runs with default settings are ranked.':token?'':'Launch Jerboa from gametronyx.com to get on the leaderboard.';
+  if(ranked&&token){
+    const run=scoreRun(report,BUILD),result=await submitScore(fetch,GTX_API,token,run);
+    if(result.ok){board=result.board;void flushPending(fetch,GTX_API,token,gtxStore);}
+    else{note=SCORE_NOTES[result.reason];if(result.reason==='offline'||result.reason==='limited')queueScore(gtxStore,run);if(result.reason==='expired')saveToken(gtxStore,null);}
+  }
+  const c=cheer(ranked?board:null,report.score);
+  finale.fill(id,board,c,note,()=>{if(feedbackDue&&promptFeedback(feedbackDue))feedbackDue=0;});
+  if(finale.open&&runId===id)announce(`${c.headline} ${report.score} point${report.score===1?'':'s'}. ${c.detail}`,color.points);
+}
 const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528;
 // Slot centers, spread evenly for 1-3 draft slots.
 const slotX=(i:number)=>195+(i-(game.draft.length-1)/2)*129;
@@ -130,7 +159,7 @@ function origin(p:Cell,slot:number):Cell{
 function cancel(){if(gesture){flashSlot=gesture.slot;flashUntil=performance.now()+650;announce('Returned to your slot.',color.red);gesture=undefined;}}
 canvas.addEventListener('pointerdown',event=>{
   if(gesture||dialog.open||historyDialog.open||feedbackDialog.open)return;event.preventDefault();const p=pointer(event);
-  if(game.over){if(p.y>240&&p.y<385)restart({...settings,seed:Math.floor(Math.random()*0xffffffff)});return;}
+  if(game.over)return;
   const actor=screen(game.position);
   if(Math.hypot(p.x-actor.x,p.y-actor.y)<25){game.reverse();announce(game.running?'Turning back after this hop.':'Connect your first piece to begin.',color.route);return;}
   const slot=game.draft.findIndex((_,i)=>Math.abs(p.x-slotX(i))<59&&Math.abs(p.y-DRAFT_Y)<51);
@@ -170,7 +199,7 @@ canvas.addEventListener('pointerup',event=>{
 });
 canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);window.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();checkpoint();}});
-function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];announce('Tap a piece to rotate. Drag up to start.');}
+function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];announce('Tap a piece to rotate. Drag up to start.');}
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
 document.querySelector('#tune')!.addEventListener('click',()=>{
   cancel();input('duration').value=String(game.settings.duration);input('grid').value=String(game.settings.grid);input('hop').value=String(game.settings.hopMs);
@@ -185,19 +214,22 @@ document.querySelector('#apply')!.addEventListener('click',event=>{
 function draw(now:number){
   const dpr=Math.min(devicePixelRatio||1,3);if(canvas.width!==W*dpr){canvas.width=W*dpr;canvas.height=H*dpr;}
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);ctx.fillStyle=color.bg;ctx.fillRect(0,0,W,H);
-  text(String(game.score)+' PTS',10,36,23);
-  const seconds=Math.max(0,Math.ceil((game.settings.duration*1000-game.ringMs)/1000));
-  text(`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,380,36,23,game.frozen?color.freeze:color.ink,'right');
-  if(game.frozen){
-    const left=(game.freezeUntil-game.elapsed)/game.settings.freezeMs;
-    text(`❄ ${((game.freezeUntil-game.elapsed)/1000).toFixed(1)}s`,380,57,10,color.freeze,'right');roundRect(318-60*left,54,60*left,5,2.5,color.freeze);
+  // The end screen covers the finished run, so its HUD is not drawn underneath.
+  if(!game.over){
+    text(String(game.score)+' PTS',10,36,23);
+    const seconds=Math.max(0,Math.ceil((game.settings.duration*1000-game.ringMs)/1000));
+    text(`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,380,36,23,game.frozen?color.freeze:color.ink,'right');
+    if(game.frozen){
+      const left=(game.freezeUntil-game.elapsed)/game.settings.freezeMs;
+      text(`❄ ${((game.freezeUntil-game.elapsed)/1000).toFixed(1)}s`,380,57,10,color.freeze,'right');roundRect(318-60*left,54,60*left,5,2.5,color.freeze);
+    }
+    text(game.running?`PHASE ${game.phase} / 3`:'READY',195,39,11,color.muted,'center');
+    if(game.boosted){
+      const left=(game.boostUntil-game.elapsed)/game.settings.boostMs;
+      text(`x2 · ${((game.boostUntil-game.elapsed)/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
+    }
+    text(`${game.board.size}${game.roadLimit?` / ${game.roadLimit}`:''} SQUARES${game.roadLimit&&game.board.size>game.roadLimit?' · PROTECTED':''}`,195,56,9,game.roadLimit&&game.roadLimit<game.settings.roadLimit?color.ring:color.muted,'center');
   }
-  text(game.running?`PHASE ${game.phase} / 3`:game.over?'CAUGHT':'READY',195,39,11,color.muted,'center');
-  if(game.boosted){
-    const left=(game.boostUntil-game.elapsed)/game.settings.boostMs;
-    text(`x2 · ${((game.boostUntil-game.elapsed)/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
-  }
-  text(`${game.board.size}${game.roadLimit?` / ${game.roadLimit}`:''} SQUARES${game.roadLimit&&game.board.size>game.roadLimit?' · PROTECTED':''}`,195,56,9,game.roadLimit&&game.roadLimit<game.settings.roadLimit?color.ring:color.muted,'center');
   ctx.save();ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.clip();
   if(debug){ctx.strokeStyle='#25343e';ctx.lineWidth=.5;for(let i=0;i<=game.settings.grid;i++){
     const n=i*scale();ctx.beginPath();ctx.moveTo(BOARD_X+n,BOARD_Y);ctx.lineTo(BOARD_X+n,BOARD_Y+BOARD_SIZE);ctx.moveTo(BOARD_X,BOARD_Y+n);ctx.lineTo(BOARD_X+BOARD_SIZE,BOARD_Y+n);ctx.stroke();}}
@@ -270,19 +302,13 @@ function draw(now:number){
     text(active&&gesture?.mode==='discard'?(game.running?'DISCARD ↓':'LOCKED'):active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,slotX(i),558,11,color.muted,'center');
   });
   text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
-  if(game.over){
-    ctx.fillStyle='#09121bba';ctx.fillRect(0,BOARD_Y,W,BOARD_SIZE);
-    roundRect(34,222,322,167,18,'#182630','#526976');text('THE RING CAUGHT HIM',195,251,17,color.ink,'center');
-    text(`${game.score} POINTS`,195,291,31,color.points,'center');
-    text(`${game.collected} nodes · ${(game.elapsed/1000).toFixed(1)} seconds`,195,323,13,color.muted,'center');
-    text('Tap here for another run',195,361,14,color.route,'center');
-  }
 }
 function frame(now:number){
   game.advance(now-lastTime);lastTime=now;
   if(game.over&&!lastOver){gesture=undefined;announce(`The Ring caught the jerboa. ${game.score} points.`,color.red);lastOver=true;checkpoint('caught');if(historyDialog.open)showRuns();
-    // Feedback cadence only counts runs played with a Gametronyx session; the popup lands after the caught screen.
-    if(loadToken(gtxStore)){const {prompt,total}=countCompletedRun(gtxStore,feedbackEvery);if(prompt)setTimeout(()=>promptFeedback(total),1200);}}
+    // Feedback cadence only counts runs played with a Gametronyx session; the popup waits for the celebration.
+    if(loadToken(gtxStore)){const {prompt,total}=countCompletedRun(gtxStore,feedbackEvery);if(prompt)feedbackDue=total;}
+    void finishRun();}
   if(game.running&&game.phase!==lastPhase){lastPhase=game.phase;phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}
   for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
     lastPickupSeq=pick.seq;

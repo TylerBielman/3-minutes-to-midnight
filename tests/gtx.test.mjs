@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,TOKEN_KEY,COUNT_KEY} from '../.test-build/gtx.js';
+import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,scoreRun,submitScore,queueScore,flushPending,TOKEN_KEY,COUNT_KEY,PENDING_KEY,MAX_PENDING} from '../.test-build/gtx.js';
 
 const memoryStore=()=>{const m=new Map();return{getItem:k=>m.has(k)?m.get(k):null,setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k),m};};
 const brokenStore={getItem(){throw Error('denied');},setItem(){throw Error('denied');},removeItem(){throw Error('denied');}};
@@ -60,4 +60,43 @@ test('feedback failures explain themselves; an ended session is flagged',async()
   const limited=await sendFeedback(reply(429,{}),'a','t',input);assert.equal(limited.expired,false);assert.match(limited.message,/a lot of feedback/);
   assert.equal((await sendFeedback(reply(400,{detail:'Write something first'}),'a','t',input)).message,'Write something first');
   assert.match((await sendFeedback(async()=>{throw TypeError('offline');},'a','t',input)).message,/Couldn’t reach Gametronyx/);
+});
+
+const report={id:'run-1',build:'P1-playtest-6',score:142,nodes:31,hops:260,seconds:184.2,ringSeconds:180,boosts:2,freezes:1,nearMisses:4,settings:{duration:180,seed:7}};
+const boardReply={season:'Playtest 6',players:23,rank:4,previous_rank:7,best:142,previous_best:120,personal_best:true,entries:[{rank:1,username:'ada',score:212}],me:{rank:4,username:'tyler',score:142}};
+const pendingIds=s=>JSON.parse(s.m.get(PENDING_KEY)??'[]').map(r=>r.run_id);
+
+test('a finished run posts under the session and the reply is the board',async()=>{
+  let seen;const fetchFn=async(url,init)=>{seen={url,init};return new Response(JSON.stringify(boardReply),{status:201});};
+  const run=scoreRun(report,'x'.repeat(80));
+  assert.deepEqual(run,{run_id:'run-1',score:142,nodes:31,hops:260,seconds:184.2,ring_seconds:180,boosts:2,freezes:1,near_misses:4,build:'P1-playtest-6',build_sha:'x'.repeat(64),settings:{duration:180,seed:7}});
+  const result=await submitScore(fetchFn,'https://api.test','tok',run);
+  assert.equal(seen.url,'https://api.test/api/games/jerboa/scores');assert.equal(seen.init.method,'POST');
+  assert.equal(seen.init.headers.Authorization,'Bearer tok');assert.deepEqual(JSON.parse(seen.init.body),run);
+  assert.equal(result.ok,true);assert.equal(result.board.rank,4);assert.equal(result.board.entries.at(-1).name,'tyler');
+});
+
+test('score failures say whether to retry',async()=>{
+  const run=scoreRun(report,'sha');
+  const reason=async fetchFn=>(await submitScore(fetchFn,'a','t',run)).reason;
+  assert.equal(await reason(reply(401,{})),'expired');assert.equal(await reason(reply(403,{})),'expired');
+  assert.equal(await reason(reply(429,{})),'limited');assert.equal(await reason(reply(503,{})),'offline');
+  assert.equal(await reason(async()=>{throw TypeError('offline');}),'offline');
+  assert.equal(await reason(reply(404,{detail:'Unknown game'})),'unavailable','no leaderboard yet, or switched off');
+  assert.equal(await reason(reply(200,{unexpected:true})),'unavailable');
+  assert.equal(await reason(reply(422,{detail:'Not ranked'})),'rejected');
+});
+
+test('runs that fail to post wait, capped, and resend once Gametronyx answers',async()=>{
+  const s=memoryStore();
+  for(let i=1;i<=MAX_PENDING+2;i++)queueScore(s,{...scoreRun(report,'sha'),run_id:`r${i}`});
+  queueScore(s,{...scoreRun(report,'sha'),run_id:'r12'});
+  assert.equal(pendingIds(s).length,MAX_PENDING);assert.equal(pendingIds(s)[0],'r12');assert.ok(!pendingIds(s).includes('r1'),'the oldest drop first');
+  const sent=[];let calls=0;
+  const flaky=async(url,init)=>{calls++;if(calls===3)throw TypeError('offline');sent.push(JSON.parse(init.body).run_id);return new Response(JSON.stringify(boardReply),{status:201});};
+  assert.equal(await flushPending(flaky,'a','t',s),2);assert.deepEqual(sent,['r3','r4'],'oldest first');
+  assert.equal(pendingIds(s).length,MAX_PENDING-2);assert.ok(pendingIds(s).includes('r5'),'the failed run keeps waiting');
+  assert.equal(await flushPending(reply(422,{}),'a','t',s),MAX_PENDING-2);assert.equal(s.m.has(PENDING_KEY),false,'refused runs are not resent forever');
+  assert.equal(await flushPending(reply(201,boardReply),'a','t',undefined),0);
+  assert.doesNotThrow(()=>queueScore(brokenStore,scoreRun(report,'sha')));
 });
