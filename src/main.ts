@@ -77,11 +77,12 @@ document.querySelector('#export')!.addEventListener('click',()=>{
 window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupted'));
 // Gametronyx: a launch from gametronyx.com carries a one-time code in the fragment. Strip it at once, trade it for a
 // session (used only to attribute feedback and scores), and learn the feedback cadence set in admin.
-const GTX_API=import.meta.env.VITE_GTX_API||'https://api.gametronyx.com',BUILD=import.meta.env.VITE_BUILD_SHA||'dev';
+// Both addresses are fixed at build time (DECISIONS G-06): a URL override could send the session token elsewhere.
+const GTX_API=import.meta.env.VITE_GTX_API||'https://api.gametronyx.com',SCORES_API=import.meta.env.VITE_SCORES_API||'https://scores.gametronyx.com',BUILD=import.meta.env.VITE_BUILD_SHA||'dev';
 const gtxStore=(()=>{try{return localStorage;}catch{return undefined;}})();
 let feedbackEvery=DEFAULT_EVERY,feedbackRuns=0,feedbackDue=0;
 const handoffCode=readHandoffCode(location.hash);
-if(handoffCode){history.replaceState(history.state,'',location.pathname+location.search);void redeemHandoff(fetch,GTX_API,handoffCode).then(token=>{if(token){saveToken(gtxStore,token);void flushPending(fetch,GTX_API,token,gtxStore);}});}
+if(handoffCode){history.replaceState(history.state,'',location.pathname+location.search);void redeemHandoff(fetch,GTX_API,handoffCode).then(token=>{if(token){saveToken(gtxStore,token);void flushPending(fetch,SCORES_API,token,gtxStore);}});}
 if(handoffCode||loadToken(gtxStore))void fetchCadence(fetch,GTX_API).then(every=>{if(every)feedbackEvery=every;});
 const feedbackDialog=document.querySelector<HTMLDialogElement>('#feedback')!,feedbackText=document.querySelector<HTMLTextAreaElement>('#feedback-text')!;
 const feedbackSend=document.querySelector<HTMLButtonElement>('#feedback-send')!,feedbackStatus=document.querySelector('#feedback-status')!;
@@ -113,8 +114,8 @@ async function finishRun(){
   finale.show({id,score:report.score,nodes:report.nodes,seconds:report.seconds,escapes:report.nearMisses});
   let board=localBoard(reports(),id,RUN_BUILD,DEFAULTS),note=!ranked?'Only runs with default settings are ranked.':token?'':'Launch Jerboa from gametronyx.com to get on the leaderboard.';
   if(ranked&&token){
-    const run=scoreRun(report,BUILD),result=await submitScore(fetch,GTX_API,token,run);
-    if(result.ok){board=result.board;void flushPending(fetch,GTX_API,token,gtxStore);}
+    const run=scoreRun(report,BUILD),result=await submitScore(fetch,SCORES_API,token,run);
+    if(result.ok){board=result.board;void flushPending(fetch,SCORES_API,token,gtxStore);}
     else{note=SCORE_NOTES[result.reason];if(result.reason==='offline'||result.reason==='limited')queueScore(gtxStore,run);if(result.reason==='expired')saveToken(gtxStore,null);}
   }
   const c=cheer(ranked?board:null,report.score);

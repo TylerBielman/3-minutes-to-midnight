@@ -87,11 +87,11 @@ Near-miss escape counter uses hysteresis: enter below .5-cell clearance, count o
 
 ## Leaderboard end screen
 
-When the Ring catches him, `finishRun` in `src/main.ts` opens the end screen and, for a ranked run with a session, posts the run. The reply is the board. Without a session, or when the post fails, the board is this device's own ranked runs of this build. See `docs/DECISIONS.md` L1–L2 and L-01 to L-08.
+When the Ring catches him, `finishRun` in `src/main.ts` opens the end screen and, for a ranked run with a session, posts the run. The reply is the board. Without a session, or when the post fails, the board is this device's own ranked runs of this build. See `docs/DECISIONS.md` L1–L3 and L-01 to L-09.
 
-The contract the server must match, all under `VITE_GTX_API`:
+The server is the Gametronyx leaderboard server: gametronyx repo, `server/`, at `VITE_SCORES_API` (default `https://scores.gametronyx.com`). Its full API is in gametronyx `docs/DESIGN.md` §15. What Jerboa uses:
 
-`POST /api/games/jerboa/scores` with `Authorization: Bearer <session token>` and the body `{run_id, score, nodes, hops, seconds, ring_seconds, boosts, freezes, near_misses, build, build_sha, settings}`. A successful reply is 200 or 201 with:
+`POST /api/leaderboards/jerboa/scores` with `Authorization: Bearer <session token>` and the body `{run_id, score, nodes, hops, seconds, ring_seconds, boosts, freezes, near_misses, build, build_sha, settings}`. A successful reply is 200 or 201 with:
 
 ```json
 {"season": "Playtest 6", "players": 23, "rank": 4, "previous_rank": 7, "best": 142, "previous_best": 120, "personal_best": true,
@@ -106,11 +106,12 @@ The contract the server must match, all under `VITE_GTX_API`:
 - `401`/`403` mean the session ended, and the game clears its token.
 - `404` means there is no leaderboard. The game shows the device board and doesn't resend.
 - `429`, `5xx` and network failures are queued for a retry. Any other `4xx` means not ranked, and the run is not resent.
-- The server should:
-  - ignore a repeated `run_id` for the same player;
-  - assign the season itself;
-  - rank only runs whose settings match the ranked defaults;
-  - reject impossible runs: score over 10 × nodes, nodes over hops, or `ring_seconds` over the run length.
+- The server:
+  - ignores a repeated `run_id` for the same player;
+  - assigns the season itself;
+  - ranks only runs whose settings match the season's ranked settings (any seed);
+  - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes.
+- **When Jerboa's defaults change** (a new playtest's tuning), the leaderboard needs a new season with the new ranked settings, or new runs are refused as not ranked. See gametronyx `docs/LAUNCH_CHECKLIST.md` Part H.
 
 ## Build, tests and package
 
