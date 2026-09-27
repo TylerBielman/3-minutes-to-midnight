@@ -29,7 +29,7 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 6. Build a branch behind him. Say which turn the color predicts, then watch him return.
 7. Tap him mid-hop. He should finish that hop and reverse once, with normal exploration afterward.
 8. Place a piece across the Ring while still within board bounds. It should be legal; travelling outside is fatal.
-9. Let the Ring catch him. The end screen should replace the board: a cheer, the score counting up, and the leaderboard (or your best runs on this device) with your row in gold. Play again should ignore a tap for a moment, then start a fresh run.
+9. Let the Ring catch him. The end screen should replace the board: a cheer, the score counting up, and the leaderboard (or your best runs on this device) with your row in gold. If you're far down the list, your row should sit about a third of the way down, and the list should scroll up to #1. Play again should ignore a tap for a moment, then start a fresh run.
 10. Build beyond 25 squares. Old eligible pieces should flash amber and disappear; no removal may strand the jerboa, break his current hop or disconnect surviving runway. The count can exceed 25 with PROTECTED displayed.
 11. Try the Step, W and straight Line3 shapes. Swipe downward to reroll; pulling an already-dragged piece back down should return it, not discard it.
 12. After a run, open Runs and export the report. Check it remains after refreshing. Share the JSON or copyable report when discussing the run.

@@ -9,7 +9,8 @@ export type Board={source:'gtx'|'local',season:string|null,players:number,rank:n
   best:number|null,previousBest:number|null,personalBest:boolean,entries:Entry[]};
 export type Tier='top'|'best'|'first'|'tied'|'close'|'run'|'tuned';
 export type Cheer={tier:Tier,headline:string,detail:string};
-export const BOARD_ROWS=10;
+// The player's row is scrolled to this fraction of the list's height, so the view shows who to chase and who is close behind.
+export const PLAYER_ROW_AT=1/3;
 
 /** Only default settings rank; the seed may be anything. Tune and URL overrides still play, unranked. */
 export function isRanked(settings:Settings|undefined,defaults:Settings):boolean{
@@ -50,11 +51,20 @@ export function localBoard(runs:RunReport[],currentId:string,build:string,defaul
     best:ranked.length?ranked[0].score:null,previousBest,personalBest:!!current&&(previousBest===null||current.score>previousBest),entries};
 }
 
-/** Rows to show: the top of the board, and the player's own row after a gap when they sit below it. */
-export function visibleRows(board:Board,limit=BOARD_ROWS):(Entry|'gap')[]{
-  const mine=board.entries.find(e=>e.me);
-  if(!mine||board.entries.indexOf(mine)<limit)return board.entries.slice(0,limit);
-  return [...board.entries.slice(0,limit-2),'gap',mine];
+/** Every row the board has, with a gap where the list skips places (the API sends the top and the player's
+ *  neighbourhood). Ties share a rank, so the next rank after n tied rows at rank r is r + n. */
+export function boardRows(board:Board):(Entry|'gap')[]{
+  const rows:(Entry|'gap')[]=[];let prev:Entry|undefined,tied=0;
+  for(const e of board.entries){
+    if(prev&&e.rank!==prev.rank&&e.rank>prev.rank+tied)rows.push('gap');
+    tied=prev&&e.rank===prev.rank?tied+1:1;rows.push(e);prev=e;
+  }
+  return rows;
+}
+
+/** Scroll offset that puts a row at PLAYER_ROW_AT of the view, kept within the list. Near the top it stays at 0. */
+export function anchorScroll(rowTop:number,viewHeight:number,contentHeight:number,at=PLAYER_ROW_AT):number{
+  return Math.round(Math.max(0,Math.min(rowTop-viewHeight*at,contentHeight-viewHeight)));
 }
 
 const GENERIC=['NICE RUN!','GREAT HOPPING!','WELL PLAYED!'];

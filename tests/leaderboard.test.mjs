@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {isRanked,parseBoard,localBoard,visibleRows,cheer,BOARD_ROWS} from '../.test-build/leaderboard.js';
+import {isRanked,parseBoard,localBoard,boardRows,anchorScroll,cheer,PLAYER_ROW_AT} from '../.test-build/leaderboard.js';
 import {DEFAULTS} from '../.test-build/game.js';
 import {BUILD} from '../.test-build/stats.js';
 
@@ -44,14 +44,24 @@ test('the device board ranks this build’s completed default runs, ties sharing
   assert.equal(unranked.rank,null);assert.equal(unranked.personalBest,false);assert.ok(!unranked.entries.some(e=>e.me));
 });
 
-test('the visible rows show the top and, below it, the player after a gap',()=>{
-  const entries=Array.from({length:30},(_,i)=>({rank:i+1,name:`p${i+1}`,score:300-i,me:i===24}));
-  const rows=visibleRows({...online(),entries});
-  assert.equal(rows.length,BOARD_ROWS);assert.equal(rows[BOARD_ROWS-2],'gap');assert.equal(rows.at(-1).rank,25);
-  assert.equal(rows[BOARD_ROWS-3].rank,BOARD_ROWS-2);
-  const near=visibleRows({...online(),entries:entries.map((e,i)=>({...e,me:i===9}))});
-  assert.ok(!near.includes('gap'),'tenth place fits in the top ten');assert.equal(near.length,BOARD_ROWS);
-  assert.deepEqual(visibleRows({...online(),entries:entries.slice(0,3)}).map(r=>r.rank),[1,2,3]);
+test('every row is kept, with a gap only where places are missing',()=>{
+  const at=ranks=>ranks.map((rank,i)=>({rank,name:`p${i}`,score:100-rank,me:false}));
+  const shape=rows=>rows.map(r=>r==='gap'?'…':r.rank);
+  // The API sends the top 10 and the player's neighbourhood (here places 19-34).
+  assert.deepEqual(shape(boardRows({...online(),entries:at([1,2,3,4,5,6,7,8,9,10,19,20,21])})),[1,2,3,4,5,6,7,8,9,10,'…',19,20,21]);
+  assert.deepEqual(shape(boardRows({...online(),entries:at([1,2,2,4,5,5,5,8])})),[1,2,2,4,5,5,5,8],'ties are not gaps');
+  assert.deepEqual(shape(boardRows({...online(),entries:at([12,12,15])})),[12,12,'…',15],'a tie cut short is a gap');
+  assert.deepEqual(boardRows({...online(),entries:[]}),[]);
+  const device=localBoard(Array.from({length:30},(_,i)=>run(`r${i}`,i*3,i)),'r5',BUILD,DEFAULTS);
+  assert.equal(boardRows(device).length,30,'the device board lists every run');assert.ok(!boardRows(device).includes('gap'));
+});
+
+test('the player row is scrolled a third of the way down, never past either end',()=>{
+  assert.equal(PLAYER_ROW_AT,1/3);
+  assert.equal(anchorScroll(600,300,900),500,'row top lands 100 px (a third of 300) into the view');
+  assert.equal(anchorScroll(60,300,900),0,'near the top the list starts at #1');
+  assert.equal(anchorScroll(870,300,900),600,'near the bottom the list stops at its end');
+  assert.equal(anchorScroll(90,300,250),0,'a list that fits never scrolls');
 });
 
 test('every run is cheered, and bigger news gets a bigger cheer',()=>{

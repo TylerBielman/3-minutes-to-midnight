@@ -8,7 +8,7 @@
 - `src/input.ts`: pure direction/threshold classification for tap, drag and downward discard.
 - `src/stats.ts`: versioned run reports, bounded local history, storage-failure handling and JSON export.
 - `src/gtx.ts`: Gametronyx launch handoff, feedback, and posting scores with a retry queue (pure; fetch and storage are passed in).
-- `src/leaderboard.ts`: ranked-settings check, API board validation, this device's fallback board, visible rows and the end-of-run cheer (pure).
+- `src/leaderboard.ts`: ranked-settings check, API board validation, this device's fallback board, board rows with gaps, the scroll that puts the player a third of the way down, and the end-of-run cheer (pure).
 - `src/finale.ts`: the end-of-run screen DOM: count-up, confetti, board rows and Play again.
 - `src/style.css`: responsive canvas and accessible native controls. No framework/physics dependency.
 - `scripts/serve.mjs`: dependency-free Node static server for the prebuilt Windows package; no-cache responses, fixed dist root, browser opened only after listening.
@@ -99,7 +99,7 @@ The contract the server must match, all under `VITE_GTX_API`:
  "me": {"rank": 4, "username": "…", "score": 142}}
 ```
 
-- `entries` is the top 10. `me` is the player's own row, even when it isn't in `entries`.
+- `entries` is the top 10 plus up to 5 places above and 10 below the player, in rank order. The game marks skipped places with "⋯" and scrolls the player's row a third of the way down the list. `me` is the player's own row, even when it isn't in `entries`.
 - `rank` and `best` are the player's standing by their best score this season. `previous_*` are the values before this run and are null for a first run.
 - Ties share a rank.
 - Usernames only, never emails.

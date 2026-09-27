@@ -30,7 +30,8 @@ details{margin-top:16px;font-size:13px}textarea{width:100%;background:#111820;co
 .finale[data-tier=top] .finale-detail,.finale[data-tier=best] .finale-detail,.finale[data-tier=first] .finale-detail{background:#ffdc7326;color:#ffdc73}
 .finale-board{width:100%;flex:1;min-height:0;display:flex;flex-direction:column;margin-top:4px;padding:10px 8px 8px;background:#152631d9;border:1px solid #526976;border-radius:14px;text-align:left}
 .finale-board h3{padding:0 6px 6px;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#a9bac5}
-.finale-board ol{position:relative;flex:0 1 auto;min-height:0;overflow:auto;margin:0;padding:0;list-style:none}
+.finale-board ol{--fade-top:0px;--fade-bottom:0px;position:relative;flex:0 1 auto;min-height:0;overflow:auto;margin:0;padding:0;list-style:none;-webkit-mask-image:linear-gradient(transparent,#000 var(--fade-top),#000 calc(100% - var(--fade-bottom)),transparent);mask-image:linear-gradient(transparent,#000 var(--fade-top),#000 calc(100% - var(--fade-bottom)),transparent)}
+.finale-board ol.more-above{--fade-top:22px}.finale-board ol.more-below{--fade-bottom:22px}
 .finale-board li{position:relative;display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:6px;min-height:30px;padding:3px 8px;border-radius:8px;font-size:14px;overflow:hidden;animation:finale-row .35s ease-out calc(var(--i,0) * 55ms + 120ms) both}
 .finale-board .rank{font-size:13px;color:#a9bac5;font-variant-numeric:tabular-nums}
 .finale-board .name{display:flex;align-items:center;min-width:0}.finale-board .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

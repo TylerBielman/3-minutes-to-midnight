@@ -1,7 +1,7 @@
 // End-of-run screen (docs/DECISIONS.md, Leaderboard end screen). It replaces the canvas "caught" panel: a cheer sized
 // to the news, the score counting up, the leaderboard with the player's row lit, and Play again. main.ts decides what to
 // show; this module only renders it.
-import {visibleRows,type Board,type Cheer,type Tier} from './leaderboard.js';
+import {boardRows,anchorScroll,type Board,type Cheer,type Tier} from './leaderboard.js';
 
 export type FinaleRun={id:string,score:number,nodes:number,seconds:number,escapes:number};
 // armMs: Play again ignores taps this long, so a finger still on the draft tray at capture can't skip the celebration.
@@ -20,6 +20,9 @@ export function createFinale(root:HTMLElement,onPlay:()=>void){
   const calm=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
   const later=(ms:number,fn:()=>void)=>{timers.push(window.setTimeout(fn,ms));};
   play.addEventListener('click',()=>{if(performance.now()>=armedAt)onPlay();});
+  // Fades at the list's edges say there is more board above or below.
+  const edges=()=>{rows.classList.toggle('more-above',rows.scrollTop>2);rows.classList.toggle('more-below',rows.scrollTop+rows.clientHeight<rows.scrollHeight-2);};
+  rows.addEventListener('scroll',edges,{passive:true});
 
   function countUp(id:string,score:number){
     if(calm()||score<=0){points.textContent=String(score);return;}
@@ -38,10 +41,10 @@ export function createFinale(root:HTMLElement,onPlay:()=>void){
   }
   function renderRows(b:Board){
     rows.replaceChildren();
-    const shown=visibleRows(b);
-    if(!shown.length){const li=document.createElement('li');li.className='empty';li.textContent='No ranked runs yet. This could be the first!';rows.append(li);return;}
-    shown.forEach((row,i)=>{
-      const li=document.createElement('li');li.style.setProperty('--i',String(i));
+    const shown=boardRows(b);
+    if(!shown.length){const li=document.createElement('li');li.className='empty';li.textContent='No ranked runs yet. This could be the first!';rows.append(li);edges();return;}
+    shown.forEach(row=>{
+      const li=document.createElement('li');
       if(row==='gap'){li.className='gap';li.textContent='⋯';li.setAttribute('aria-hidden','true');rows.append(li);return;}
       if(row.me)li.className='me';
       const rank=document.createElement('span'),name=document.createElement('span'),score=document.createElement('span');
@@ -52,9 +55,12 @@ export function createFinale(root:HTMLElement,onPlay:()=>void){
       score.className='score';score.textContent=String(row.score);
       li.append(rank,name,score);rows.append(li);
     });
-    // Short screens scroll the list; the player's own row must stay in view.
-    const mine=rows.querySelector<HTMLElement>('li.me');
-    if(mine){const bottom=mine.offsetTop+mine.offsetHeight;rows.scrollTop=bottom>rows.clientHeight?bottom-rows.clientHeight:0;}
+    // The player's row always shows, a third of the way down; rows enter in order from the top of the view.
+    const mine=rows.querySelector<HTMLElement>('li.me'),items=[...rows.children] as HTMLElement[];
+    rows.scrollTop=mine?anchorScroll(mine.offsetTop,rows.clientHeight,rows.scrollHeight):0;
+    const first=Math.max(0,items.findIndex(li=>li.offsetTop+li.offsetHeight>rows.scrollTop));
+    items.forEach((li,i)=>li.style.setProperty('--i',String(Math.max(0,i-first))));
+    edges();
   }
 
   /** The run just ended: count the score up and wait for the board. */
