@@ -7,6 +7,9 @@
 - `src/main.ts`: native Pointer Events input, Canvas 2D renderer, responsive portrait layout, route arrows/color, legality ghosts, announcements, results, Tune panel and restart.
 - `src/input.ts`: pure direction/threshold classification for tap, drag and downward discard.
 - `src/stats.ts`: versioned run reports, bounded local history, storage-failure handling and JSON export.
+- `src/gtx.ts`: Gametronyx launch handoff, feedback, and posting scores with a retry queue (pure; fetch and storage are passed in).
+- `src/leaderboard.ts`: ranked-settings check, API board validation, this device's fallback board, board rows with gaps, the scroll that puts the player a third of the way down, and the end-of-run cheer (pure).
+- `src/finale.ts`: the end-of-run screen DOM: count-up, confetti, board rows and Play again.
 - `src/style.css`: responsive canvas and accessible native controls. No framework/physics dependency.
 - `scripts/serve.mjs`: dependency-free Node static server for the prebuilt Windows package; no-cache responses, fixed dist root, browser opened only after listening.
 
@@ -81,6 +84,34 @@ Version 1 reports identify build P1-playtest-2 and a unique run ID. HTTP phone a
 Save by run ID after draft actions, every five seconds of play, on capture/restart and visibility/pagehide. No history record before first placement. On a fresh load, previous active checkpoints are marked interrupted; do not claim those are completed scores. History retains up to 50 runs in `3mtm-runs-v1` localStorage; quota pressure drops oldest reports. Storage errors do not stop play and in-memory reports remain exportable with a visible warning. Browser history is origin-specific, including port. No remote telemetry endpoint. Export provides summary and timeline for discussion, not a video or full automated replay. Multi-tab concurrent play is not synchronized.
 
 Near-miss escape counter uses hysteresis: enter below .5-cell clearance, count only when later above .75. Fatal contact does not increment escapes. Closest surviving clearance is sampled at simulation steps and will often be near zero just before death.
+
+## Leaderboard end screen
+
+When the Ring catches him, `finishRun` in `src/main.ts` opens the end screen and, for a ranked run with a session, posts the run. The reply is the board. Without a session, or when the post fails, the board is this device's own ranked runs of this build. See `docs/DECISIONS.md` L1–L3 and L-01 to L-09.
+
+The server is the Gametronyx leaderboard server: gametronyx repo, `server/`, at `VITE_SCORES_API` (default `https://scores.gametronyx.com`). Its full API is in gametronyx `docs/DESIGN.md` §15. What Jerboa uses:
+
+`POST /api/leaderboards/jerboa/scores` with `Authorization: Bearer <session token>` and the body `{run_id, score, nodes, hops, seconds, ring_seconds, boosts, freezes, near_misses, build, build_sha, settings}`. A successful reply is 200 or 201 with:
+
+```json
+{"season": "Playtest 6", "players": 23, "rank": 4, "previous_rank": 7, "best": 142, "previous_best": 120, "personal_best": true,
+ "entries": [{"rank": 1, "username": "…", "score": 212, "me": false}],
+ "me": {"rank": 4, "username": "…", "score": 142}}
+```
+
+- `entries` is the top 10 plus up to 5 places above and 10 below the player, in rank order. The game marks skipped places with "⋯" and scrolls the player's row a third of the way down the list. `me` is the player's own row, even when it isn't in `entries`.
+- `rank` and `best` are the player's standing by their best score this season. `previous_*` are the values before this run and are null for a first run.
+- Ties share a rank.
+- Usernames only, never emails.
+- `401`/`403` mean the session ended, and the game clears its token.
+- `404` means there is no leaderboard. The game shows the device board and doesn't resend.
+- `429`, `5xx` and network failures are queued for a retry. Any other `4xx` means not ranked, and the run is not resent.
+- The server:
+  - ignores a repeated `run_id` for the same player;
+  - assigns the season itself;
+  - ranks only runs whose settings match the season's ranked settings (any seed);
+  - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes.
+- **When Jerboa's defaults change** (a new playtest's tuning), the leaderboard needs a new season with the new ranked settings, or new runs are refused as not ranked. See gametronyx `docs/LAUNCH_CHECKLIST.md` Part H.
 
 ## Build, tests and package
 

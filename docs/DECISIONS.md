@@ -188,8 +188,34 @@ Source: Tyler's Gametronyx site brief (gametronyx repo `docs/DESIGN.md` §5.6 an
 | --- | --- | --- |
 | G-01 | A "game played" is a completed run: the Ring caught the jerboa. Restarts and abandoned runs don't count. | Matches "every 3 games played". `countCompletedRun` in `src/gtx.ts`; called from the game-over block in `src/main.ts`. |
 | G-02 | Runs only count, and the popup only appears, when the player arrived from gametronyx.com with a session. Direct visitors never see it. | They have no account to attribute feedback to. |
-| G-03 | The popup opens 1.2 s after the caught screen. The count restarts when it opens, so Send, Skip and closing the tab all wait another N runs. | No nagging; the player sees their result first. `promptFeedback` in `src/main.ts`. |
-| G-04 | The launch code is read from `#gtx_handoff=`, stripped at once, and traded for a token stored as `gtx_auth_token_v1`. The token is used only for feedback. | The code is one-time and valid for 60 s, so a JWT never appears in a URL. |
+| G-03 | The popup opens 1.2 s after the caught screen. The count restarts when it opens, so Send, Skip and closing the tab all wait another N runs. | No nagging; the player sees their result first. `promptFeedback` in `src/main.ts`. Timing superseded by L-07. |
+| G-04 | The launch code is read from `#gtx_handoff=`, stripped at once, and traded for a token stored as `gtx_auth_token_v1`. The token is used only for feedback (and, since L1, scores). | The code is one-time and valid for 60 s, so a JWT never appears in a URL. |
 | G-05 | The cadence comes from Gametronyx admin (`feedback_every_n_runs`), falling back to 3. The build SHA is attached to each report (`VITE_BUILD_SHA`, set by the deploy workflow). | Tunable without a Jerboa release; reports tie to a build. |
 | G-06 | The API base is fixed at build time (`VITE_GTX_API`, default `https://api.gametronyx.com`). There is no URL override. | A URL override would let a crafted link send the session token elsewhere. |
+
+## Leaderboard end screen — 2026-09-27
+
+Source: Tyler's request for a leaderboard based on player usernames, then "Show the leaderboard at the end of a run with the play again prompt replacing the current game over screen. Celebrating the player."
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| L1 | Jerboa has a leaderboard of players ranked by their Gametronyx username. This extends the Gametronyx exception to "accounts and backend deferred". |
+| L2 | When the Ring catches him, an end screen replaces the game-over panel. It celebrates the player and shows the leaderboard and a Play again button. |
+| L3 | The player's own spot always shows. When it would be below the fold, the board scrolls so their row sits about a third of the way down. |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| L-01 | Only completed runs with default settings are ranked. The seed can be anything. Runs changed through Tune or the URL still play and still get a celebration, but they read "Tuned run · not ranked" and nothing is posted. | Keeps scores comparable. `isRanked` in `src/leaderboard.ts`. |
+| L-02 | Every run gets a cheer, and bigger news gets a bigger one. In order: TOP OF THE BOARD! (a new best that puts you at #1), NEW PERSONAL BEST!, YOU'RE ON THE BOARD! (first ranked run), TIED YOUR BEST!, SO CLOSE! (within 10% of your best), otherwise NICE RUN!, GREAT HOPPING! or WELL PLAYED!. The score counts up, and there's more confetti for bigger news. | "Celebrating the player", even on a modest run. `cheer` in `src/leaderboard.ts`; the confetti amounts are `FX.confetti` in `src/finale.ts`. |
+| L-03 | The board lists the top 10 and the places around you (the API sends up to 5 above and 10 below you), with a "⋯" where places are skipped. The device board lists every run. For L3 the list scrolls so your row's top is a third of the way down, but never past either end: near the top the board starts at #1, and in last place your row sits lower. Fades at the list's edges show there's more to scroll. Your row is gold with a YOU tag. Ties share a rank, and the earlier score is listed first. | You see the players just ahead to chase and just behind. `boardRows`, `anchorScroll` and `PLAYER_ROW_AT` in `src/leaderboard.ts`. |
+| L-04 | Without a Gametronyx session, and whenever the leaderboard can't be used (offline, not switched on, or not deployed yet), the board lists this device's completed default-setting runs of this build under "Your best runs · this device". A note says why: no session, offline, or "The Gametronyx leaderboard isn't open yet". | Direct visitors and offline players still get a celebration and a target. `localBoard` in `src/leaderboard.ts`. |
+| L-05 | A run that fails to post (offline, server error or rate limited) waits in `gtx_pending_scores_v1` (at most 10) and is resent after the next successful post or the next launch from gametronyx.com. The run ID makes a resend harmless. A 404 (no leaderboard) and other refusals are not resent. A post gives up after 5 s. | A best set on bad Wi-Fi isn't lost. `queueScore` and `flushPending` in `src/gtx.ts`. |
+| L-06 | Play again ignores taps for 0.7 s, so a finger still on the draft tray when he's caught can't skip the celebration. It takes keyboard focus. The canvas HUD isn't drawn under the end screen. With reduced motion there is no count-up, confetti or animation. | `FX.armMs` in `src/finale.ts`. |
+| L-07 | The feedback popup (G2) now waits for the celebration: it opens 1.8 s after the board appears. If the player taps Play again first, it opens at the next end screen instead. The cadence is unchanged. | The popup no longer covers the leaderboard. Supersedes G-03's 1.2 s. `FX.settleMs` in `src/finale.ts`. |
+| L-08 | The server owns the leaderboard: it assigns the season name and ranks each player by their best score this season. The game only displays the result. The API contract is in `docs/TECHNICAL_DESIGN.md` (Leaderboard end screen). | Per Tyler (gametronyx U24), the server is the Gametronyx leaderboard server in the gametronyx repo (`server/`), not the accounts API. Until it's live, every player sees their device board. |
+| L-09 | Scores go to `VITE_SCORES_API` (default `https://scores.gametronyx.com`), fixed at build time like the accounts address. | A URL override could send the session token elsewhere (G-06). |
 
