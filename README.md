@@ -27,9 +27,10 @@ When the Ring catches him, an end screen celebrates the run: the score counts up
 - Drag up to connect it. Orientation is locked while held.
 - Invalid release returns it to the same slot.
 - Swipe down from the draft row to discard/reroll (unlocks after your first placement).
-- Tap the jerboa to reverse after his current hop.
+- Tap the jerboa to reverse after his current hop. Until you've done this in two runs, a tip says so at the start, and a flash warns you when his route is about to cross the Ring.
 - Violet x2 node: he hops faster (1.4×) and points count double for 7 seconds.
-- Blue ❄ freeze node: the Ring and the countdown stop for 6 seconds; the Ring glows blue and blinks just before it thaws.
+- Blue ❄ freeze node: time stops for 6 seconds. The Ring, the countdown, the x2 timer and moving 10s all wait; the Ring glows blue and blinks just before it thaws. Freeze during x2 is a DOUBLE BONUS.
+- A rare 10 (bigger gold disk with a bright rim) hops between the cells around where it appeared, about every 2 seconds. It never slips away from the cell he is hopping to.
 - Powerup speed and durations are adjustable in Tune.
 - Phases last 60 s, 80 s and 40 s, and the Ring closes fastest in the last one. Late in the run old road clears faster, and pieces longer than the Ring is wide are swapped out.
 - The Ring's pulse quickens at every phase change. Point values rise toward 5 as phases advance.
@@ -37,6 +38,8 @@ When the Ring catches him, an end screen celebrates the run: the score counts up
 - New run restarts; Tune changes duration, board size, hop speed, node count, seed, runway limit, Ring hit radius and debug grid.
 
 The jerboa ignores the Ring. Roads survive it. Every run ends when it catches him; collect as many points as possible first.
+
+**‹ Gametronyx** in the top bar and **More games** on the end screen go back to gametronyx.com.
 
 ## Playtest 2 changes
 
@@ -65,7 +68,7 @@ The source-checkout launchers build the current source. The distributed zip uses
 - [User decisions and agent calls for review](docs/DECISIONS.md)
 - [Validation and phone playtest](docs/PLAYTEST.md)
 
-Old polygon docking documents are archived. No hammer, powerups, stage progression or smart spawning in P1.
+Old polygon docking documents are archived. No hammer or smart spawning in P1. Powerups are x2 and freeze; Rounds and more powerups are planned as an unranked trial (docs/DECISIONS.md, Playtest 7).
 
 ### If the launcher does not show a phone address
 

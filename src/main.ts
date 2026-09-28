@@ -1,21 +1,22 @@
-import {Game,DEFAULTS,ringBeats,type Settings} from './game.js';
+import {Game,DEFAULTS,TUNING,ringBeats,type Settings} from './game.js';
 import {cell,key,placementError,type Cell} from './runway.js';
 import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
 import {readHistory,saveReport,runReport,exportHistory,BUILD as RUN_BUILD,type Outcome,type RunReport} from './stats.js';
 import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,scoreRun,submitScore,queueScore,flushPending,DEFAULT_EVERY,MAX_FEEDBACK,type ScoreResult} from './gtx.js';
 import {isRanked,localBoard,cheer} from './leaderboard.js';
 import {createFinale} from './finale.js';
+import {reverseTipsWanted,noteReversal,routeCrossesRing} from './tips.js';
 import './style.css';
 
 const app=document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML=`<main class="game-shell">
-  <div class="tools"><span>P1 · PLAYTEST 6</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
+  <div class="tools"><a id="gtx-home" class="home">‹ Gametronyx</a><span>P1 · PLAYTEST 7</span><button id="runs" type="button">Runs</button><button id="tune" type="button">Tune</button><button id="restart" type="button">New run</button></div>
   <div class="stage"><canvas id="game" width="390" height="626" aria-label="Jerboa runway game. Tap a draft piece to rotate, drag to connect runway, swipe down from the draft to discard. Tap the jerboa to reverse."></canvas>
     <section id="finale" class="finale" hidden aria-labelledby="finale-caught finale-headline"><div id="finale-confetti" class="confetti" aria-hidden="true"></div>
       <p id="finale-caught" class="finale-caught">The Ring caught him</p><h2 id="finale-headline" class="finale-headline"></h2>
       <p class="finale-score"><span id="finale-points">0</span><small>points</small></p><p id="finale-stats" class="finale-stats"></p><p id="finale-detail" class="finale-detail"></p>
       <div id="finale-board" class="finale-board"><h3 id="finale-board-title">Leaderboard</h3><p class="finale-wait">Posting your score…</p><ol id="finale-rows"></ol><p id="finale-note" class="finale-note"></p></div>
-      <button id="play-again" class="play-again" type="button">Play again</button>
+      <button id="play-again" class="play-again" type="button">Play again</button><a id="more-games" class="more-games">More games · Gametronyx</a>
     </section></div>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
@@ -79,6 +80,9 @@ window.addEventListener('pagehide',()=>checkpoint(game.over?'caught':'interrupte
 // session (used only to attribute feedback and scores), and learn the feedback cadence set in admin.
 // Both addresses are fixed at build time (DECISIONS G-06): a URL override could send the session token elsewhere.
 const GTX_API=import.meta.env.VITE_GTX_API||'https://api.gametronyx.com',SCORES_API=import.meta.env.VITE_SCORES_API||'https://scores.gametronyx.com',BUILD=import.meta.env.VITE_BUILD_SHA||'dev';
+// The way back to Gametronyx (top bar and end screen). Same tab: players arrive from there.
+const GTX_SITE=import.meta.env.VITE_GTX_SITE||'https://gametronyx.com';
+document.querySelector<HTMLAnchorElement>('#gtx-home')!.href=GTX_SITE;
 const gtxStore=(()=>{try{return localStorage;}catch{return undefined;}})();
 let feedbackEvery=DEFAULT_EVERY,feedbackRuns=0,feedbackDue=0;
 const handoffCode=readHandoffCode(location.hash);
@@ -104,7 +108,7 @@ document.querySelector('#feedback-form')!.addEventListener('submit',async event=
 });
 // End of run: the celebration and leaderboard replace the caught panel. Ranked runs post under the Gametronyx username;
 // without a session, or when that fails, the board is this device's own ranked runs.
-const finale=createFinale(document.querySelector<HTMLElement>('#finale')!,()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
+const finale=createFinale(document.querySelector<HTMLElement>('#finale')!,()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}),GTX_SITE);
 const SCORE_NOTES:Record<Exclude<ScoreResult,{ok:true}>['reason'],string>={
   expired:'Your Gametronyx session has ended. Launch Jerboa from gametronyx.com to post scores.',
   offline:'Couldn’t reach Gametronyx. This score will post next time.',limited:'Gametronyx is busy. This score will post next time.',
@@ -127,11 +131,14 @@ const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528;
 const slotX=(i:number)=>195+(i-(game.draft.length-1)/2)*129;
 const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff',freeze:'#5aa9ff'};
 // Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
-const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500};
+// tipIntroMs: how long "tap him" pulses after the first placement; tipAnnouncements: danger announcements per run.
+const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipIntroMs:6000,tipAnnouncements:3};
 let message='Tap a piece to rotate. Drag up to start.',messageColor=color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
 let lastPhase=1,phaseSurgeAt=-Infinity,lastPickupSeq=0;
+// Reverse tips (DECISIONS U38) are decided per run and stop once the player has reversed in two runs on this device.
+let reverseTips=reverseTipsWanted(gtxStore),tipCounted=false,firstPlacedAt=-Infinity,dangerIndex=-1,dangerAnnounced=0,wasDoubleBonus=false;
 type Particle={x:number,y:number,vx:number,vy:number,born:number,tint:string};
 type Floater={x:number,y:number,label:string,born:number,tint:string};
 let particles:Particle[]=[],floaters:Floater[]=[];
@@ -194,13 +201,15 @@ canvas.addEventListener('pointerup',event=>{
   }else{
     const error=game.place(g.slot,origin(p,g.slot));
     if(error){flashSlot=g.slot;flashUntil=performance.now()+800;announce(`${error} · returned to your slot`,color.red);}
-    else{removedUntil=performance.now()+900;announce(game.lastRemoved.length?`Placed · cleared ${game.lastRemoved.length} old squares`:'Runway placed. Tap the jerboa to reverse.',color.route);}
+    else{removedUntil=performance.now()+900;if(game.placements===1)firstPlacedAt=performance.now();announce(game.lastRemoved.length?`Placed · cleared ${game.lastRemoved.length} old squares`:'Runway placed. Tap the jerboa to reverse.',color.route);}
   }
   checkpoint();
 });
 canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);window.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();checkpoint();}});
-function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];announce('Tap a piece to rotate. Drag up to start.');}
+function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];
+  reverseTips=reverseTipsWanted(gtxStore);tipCounted=false;firstPlacedAt=-Infinity;dangerIndex=-1;dangerAnnounced=0;wasDoubleBonus=false;
+  announce('Tap a piece to rotate. Drag up to start.');}
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
 document.querySelector('#tune')!.addEventListener('click',()=>{
   cancel();input('duration').value=String(game.settings.duration);input('grid').value=String(game.settings.grid);input('hop').value=String(game.settings.hopMs);
@@ -224,10 +233,12 @@ function draw(now:number){
       const left=(game.freezeUntil-game.elapsed)/game.settings.freezeMs;
       text(`❄ ${((game.freezeUntil-game.elapsed)/1000).toFixed(1)}s`,380,57,10,color.freeze,'right');roundRect(318-60*left,54,60*left,5,2.5,color.freeze);
     }
-    text(game.running?`PHASE ${game.phase} / 3`:'READY',195,39,11,color.muted,'center');
+    // x2 during a freeze: the x2 countdown waits too (DECISIONS U40).
+    if(game.doubleBonus)text('DOUBLE BONUS',195,39,11+Math.sin(now/140),color.boost,'center');
+    else text(game.running?`PHASE ${game.phase} / 3`:'READY',195,39,11,color.muted,'center');
     if(game.boosted){
-      const left=(game.boostUntil-game.elapsed)/game.settings.boostMs;
-      text(`x2 · ${((game.boostUntil-game.elapsed)/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
+      const left=game.boostLeft/game.settings.boostMs;
+      text(`x2 ${game.frozen?'❄':'·'} ${(game.boostLeft/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
     }
     text(`${game.board.size}${game.roadLimit?` / ${game.roadLimit}`:''} SQUARES${game.roadLimit&&game.board.size>game.roadLimit?' · PROTECTED':''}`,195,56,9,game.roadLimit&&game.roadLimit<game.settings.roadLimit?color.ring:color.muted,'center');
   }
@@ -255,7 +266,18 @@ function draw(now:number){
     text('x2',c.x,c.y,Math.max(10,scale()*.5),'#1d1026','center');
   }
   const pointTint=game.boosted?color.boost:color.points;
-  for(const [k,value] of game.nodes){const c=screen(cell(k));ctx.fillStyle=pointTint;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.34,0,Math.PI*2);ctx.fill();const shown=game.boosted?value*2:value;text(String(shown),c.x,c.y,Math.max(shown>9?8:10,scale()*(shown>9?.42:.52)),'#21211b','center');}
+  for(const [k,value] of game.nodes){
+    let c=screen(cell(k));const mover=game.movers.get(k);
+    if(mover){
+      // A moving 10: it slides between cells and wobbles just before it steps (stopped while frozen).
+      const t=(game.liveMs-mover.movedAt)/TUNING.mover.slideMs,until=mover.nextMoveAt-game.liveMs;
+      if(mover.from&&t<1){const f=screen(mover.from),e=1-(1-t)*(1-t);c={x:f.x+(c.x-f.x)*e,y:f.y+(c.y-f.y)*e};}
+      if(game.running&&!game.frozen&&until<TUNING.mover.wobbleMs)c={x:c.x+Math.sin(now/32)*2.4*(1-until/TUNING.mover.wobbleMs),y:c.y};
+      ctx.save();ctx.shadowColor=pointTint;ctx.shadowBlur=10;ctx.fillStyle=pointTint;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.44,0,Math.PI*2);ctx.fill();ctx.restore();
+      ctx.strokeStyle='#fff7d1';ctx.lineWidth=2;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.44,0,Math.PI*2);ctx.stroke();
+    }else{ctx.fillStyle=pointTint;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.34,0,Math.PI*2);ctx.fill();}
+    const shown=game.boosted?value*2:value;text(String(shown),c.x,c.y,Math.max(shown>9?8:10,scale()*(shown>9?.42:.52)),'#21211b','center');
+  }
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
   // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
@@ -267,6 +289,8 @@ function draw(now:number){
   ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.stroke();
   if(beat>.05){ctx.globalAlpha=beat*.45;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius-(1-beat)*scale()*1.2),0,Math.PI*2);ctx.stroke();}
   ctx.restore();
+  // Double bonus: a violet shimmer inside the frozen Ring.
+  if(game.doubleBonus){ctx.save();ctx.globalAlpha=.55+.3*Math.sin(now/120);ctx.strokeStyle=color.boost;ctx.shadowColor=color.boost;ctx.shadowBlur=12;ctx.lineWidth=2;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius-5),0,Math.PI*2);ctx.stroke();ctx.restore();}
   const surge=(now-phaseSurgeAt)/FX.phaseSurgeMs;
   if(surge>=0&&surge<1){
     ctx.save();ctx.globalAlpha=1-surge;ctx.strokeStyle=color.ring;ctx.lineWidth=6*(1-surge)+1;ctx.shadowColor=color.ring;ctx.shadowBlur=24;
@@ -286,6 +310,7 @@ function draw(now:number){
   ctx.strokeStyle=game.reverseQueued?color.points:color.ink;ctx.lineWidth=1;ctx.beginPath();ctx.arc(p.x,p.y,game.settings.hitRadius*scale(),0,Math.PI*2);ctx.stroke();
   ctx.fillStyle=game.over?color.red:game.boosted?color.boost:color.ink;ctx.beginPath();ctx.arc(p.x,p.y-bounce,5,0,Math.PI*2);ctx.fill();
   ctx.lineWidth=2;ctx.strokeStyle=color.ink;ctx.beginPath();ctx.moveTo(p.x-2,p.y-bounce-3);ctx.lineTo(p.x-3,p.y-bounce-9);ctx.moveTo(p.x+2,p.y-bounce-3);ctx.lineTo(p.x+4,p.y-bounce-9);ctx.stroke();
+  drawReverseTip(now,p);
   particles=particles.filter(q=>now-q.born<FX.burstMs);floaters=floaters.filter(f=>now-f.born<FX.burstMs*1.4);
   for(const q of particles){const t=now-q.born,k=t/FX.burstMs;ctx.globalAlpha=1-k;ctx.fillStyle=q.tint;ctx.beginPath();ctx.arc(q.x+q.vx*t,q.y+q.vy*t,3*(1-k)+1,0,Math.PI*2);ctx.fill();}
   for(const f of floaters){const k=(now-f.born)/(FX.burstMs*1.4);ctx.globalAlpha=1-k*k;text(f.label,f.x,f.y-k*26,15+4*(1-k),f.tint,'center');}
@@ -304,8 +329,29 @@ function draw(now:number){
   });
   text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
 }
+/** Reverse tips (DECISIONS U38): before the start, for a few seconds after it, and whenever his route is about to
+ *  cross the Ring while a reverse can still save him. A ring around him and a callout above him, kept on the board. */
+function drawReverseTip(now:number,p:Cell){
+  if(!reverseTips||game.over)return;
+  const danger=game.running&&dangerIndex>=2&&!game.reverseQueued;
+  const label=!game.running?'ONCE HE’S MOVING, TAP HIM TO TURN HIM BACK':danger?'TAP HIM TO TURN BACK!':now-firstPlacedAt<FX.tipIntroMs&&!game.reversals?'TAP HIM TO TURN BACK':'';
+  if(!label)return;
+  const tint=danger?color.red:color.route,pulse=.5+.5*Math.sin(now/(danger?90:180));
+  ctx.save();ctx.globalAlpha=.55+.45*pulse;ctx.strokeStyle=tint;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,14+5*pulse,0,Math.PI*2);ctx.stroke();ctx.restore();
+  ctx.font=`600 11px system-ui, sans-serif`;const w=ctx.measureText(label).width+16,h=20;
+  const x=Math.max(BOARD_X+4+w/2,Math.min(BOARD_X+BOARD_SIZE-4-w/2,p.x)),y=p.y-36<BOARD_Y+h?p.y+34:p.y-36;
+  roundRect(x-w/2,y-h/2,w,h,h/2,'#0b141c99',tint);text(label,x,y+.5,11,danger?color.red:color.ink,'center');
+}
 function frame(now:number){
   game.advance(now-lastTime);lastTime=now;
+  if(game.reversals&&!tipCounted){tipCounted=true;noteReversal(gtxStore,runId);}
+  if(reverseTips&&game.running){
+    // Look a few hops down his forecast route; index 1 is the hop in flight, which a reverse can no longer change.
+    const left=game.hop?game.hop.duration-game.hop.elapsed:0,each=game.hop?.duration??game.settings.hopMs;
+    const i=routeCrossesRing(route,(game.settings.grid-1)/2,j=>game.radiusIn(left+(j-1)*each),game.settings.hitRadius);
+    if(i>=2&&dangerIndex<2&&!game.reverseQueued&&dangerAnnounced<FX.tipAnnouncements){dangerAnnounced++;announce('Heading for the Ring · tap him to turn back.',color.red);}
+    dangerIndex=i;
+  }
   if(game.over&&!lastOver){gesture=undefined;announce(`The Ring caught the jerboa. ${game.score} points.`,color.red);lastOver=true;checkpoint('caught');if(historyDialog.open)showRuns();
     // Feedback cadence only counts runs played with a Gametronyx session; the popup waits for the celebration.
     if(loadToken(gtxStore)){const {prompt,total}=countCompletedRun(gtxStore,feedbackEvery);if(prompt)feedbackDue=total;}
@@ -317,6 +363,9 @@ function frame(now:number){
     else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${game.settings.boostMs/1000}s`,color.boost);}
     else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
   }
+  // After the pickups, so this announcement wins when the freeze or x2 that starts it was just collected.
+  if(game.doubleBonus&&!wasDoubleBonus){burst(game.position,color.boost,'DOUBLE BONUS!',now,24);announce('Double bonus! x2 waits while the Ring is frozen.',color.boost);}
+  wasDoubleBonus=game.doubleBonus;
   // Pieces that no longer fit across the Ring are swapped out (never the one in your hand).
   for(const slot of game.replaceOutgrown(gesture?.slot??-1)){flashSlot=slot;flashUntil=now+650;announce('The Ring outgrew a piece · new piece dealt',color.ring);}
   if(game.running&&now-lastSave>5000)checkpoint();

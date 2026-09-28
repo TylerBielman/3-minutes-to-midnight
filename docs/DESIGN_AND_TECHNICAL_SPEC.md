@@ -87,7 +87,12 @@ The preview uses the same decision function and a copy of its random state. It n
 - Default spawn policy is uniform random among eligible cell centers inside the remaining Ring, including existing runway. It does not favor reachable, helpful, safe or unvisited destinations.
 - Avoid duplicate node occupancy and the jerboa's current/committed landing cells. These exclusions prevent instant replacement/collection loops, rather than optimizing player opportunities.
 - A node's visible disk must fit inside the Ring. If too few cells remain, the pool shrinks rather than forcing an impossible spawn.
-- Nodes do not cause a stage transition. No powerups in P1.
+- Nodes do not cause a stage transition. Powerups: x2 and freeze (see the decision ledger).
+
+Playtest 7 additions (DECISIONS U38–U42):
+- Values are 1–5 plus a rare 10 that moves: about every 2 s it steps to a neighbouring cell, staying within 1 cell of where it appeared and never leaving the cell he is hopping to.
+- Freeze stops time: the Ring, the x2 countdown and moving 10s all wait. x2 with freeze is a DOUBLE BONUS.
+- Reverse tips: a tip at the start and a flash when his route is about to cross the Ring, until the player has reversed in two runs.
 
 ## Run history
 

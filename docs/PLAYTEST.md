@@ -35,6 +35,15 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 12. After a run, open Runs and export the report. Check it remains after refreshing. Share the JSON or copyable report when discussing the run.
 13. Try Tune: one-minute run, larger cells (15×15), slower hops. Use the same seed to compare settings.
 
+## Playtest 7 pass
+
+1. Fresh browser (or clear site data): before placing, a callout above him says to tap him once he's moving. After the first placement a cyan ring pulses around him for a few seconds.
+2. Build a long road toward the Ring. A few hops before he'd cross it, a red ring and "TAP HIM TO TURN BACK!" appear. Tap him; he turns back.
+3. After reversing in two runs, the tips stop appearing.
+4. Find a 10 (larger gold disk, bright rim). It wobbles, then hops to a neighbouring cell about every 2 s, never more than one cell from where it appeared. Build to it: once he is hopping onto it, it stays put and pays 10 (20 with x2).
+5. Collect x2, then freeze (or freeze, then x2): the phase line reads DOUBLE BONUS, the x2 bar shows ❄ and stops, and moving 10s stand still until the thaw.
+6. "‹ Gametronyx" in the top bar and "More games" on the end screen open gametronyx.com in the same tab. Without a session, "gametronyx.com" in the end-screen note is a link. On a 320-px-wide phone the top bar fits.
+
 ## Record observations
 
 - Device/browser, portrait dimensions, seed and Tune values.

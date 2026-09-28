@@ -6,6 +6,7 @@
 - `src/game.ts`: pure simulation, settings/tuning, three draft slots, mutable board/visit sets and ordered placed-piece records, point nodes, selected/in-flight hops, future route forecast, score and Ring lifecycle.
 - `src/main.ts`: native Pointer Events input, Canvas 2D renderer, responsive portrait layout, route arrows/color, legality ghosts, announcements, results, Tune panel and restart.
 - `src/input.ts`: pure direction/threshold classification for tap, drag and downward discard.
+- `src/tips.ts`: reverse tips: whether they still show on this device, counting runs with a reversal, and where his forecast route meets the Ring (pure).
 - `src/stats.ts`: versioned run reports, bounded local history, storage-failure handling and JSON export.
 - `src/gtx.ts`: Gametronyx launch handoff, feedback, and posting scores with a retry queue (pure; fetch and storage are passed in).
 - `src/leaderboard.ts`: ranked-settings check, API board validation, this device's fallback board, board rows with gaps, the scroll that puts the player a third of the way down, and the end-of-run cheer (pure).
@@ -49,17 +50,29 @@ The jerboa's ground center interpolates along the committed edge. Capture occurs
 
 One seed initializes three independent streams (pieces, nodes, navigation). Drawing a piece samples a group, then a uniform member. Rotation and cancelled placement do not consume draws. Swiping or successful placement consumes one new piece.
 
-Nodes spawn uniformly on eligible cells inside the current Ring. Values 1–5 are drawn from the current phase's weights in `TUNING.phaseValueWeights`, shifting toward 5s each phase. The first two spawns of a run are 5s. Existing runway is eligible; the current source cell, committed landing cell and existing node cells are excluded. Node disks must fit fully inside the Ring. Expired or collected nodes replenish; if eligible space is exhausted, the pool may shrink. No path reachability or helpfulness filter is used.
+Nodes spawn uniformly on eligible cells inside the current Ring. Values 1–5 and 10 are drawn from the current phase's weights in `TUNING.phaseValueWeights`, shifting toward 5s and 10s each phase. The first two spawns of a run are 5s. Existing runway is eligible; the current source cell, committed landing cell and existing node cells are excluded. Node disks must fit fully inside the Ring. Expired or collected nodes replenish; if eligible space is exhausted, the pool may shrink. No path reachability or helpfulness filter is used.
 
 The engine has a `spawn: 'uncovered'` option as a future experimental seam, but the shipped UI/default always uses `random`. No smart behavior is implemented.
 
+## Moving 10s
+
+A 10 is a moving node. Its value stays in `nodes` (so spawning exclusions, Ring removal and reports treat it like any node) and `movers` holds its home cell and next step time, keyed by its current cell. Every removal goes through `dropNode`, so a later node on the same cell never inherits mover state. Each simulation slice, after landing and `beginHop`, `stepMovers` moves each due mover to a random orthogonal neighbour within `TUNING.mover.range` (Chebyshev) of home that is on the board, inside the Ring by its disk, and free of nodes, powerups, his cell and his committed landing cell (`moverSteps`). A mover on his landing cell never moves. Step times are on the live clock (below), so movers wait while frozen and before the run starts. Movers draw from their own random stream (`moverRng`), leaving node spawns for a seed unchanged. The renderer wobbles a mover during `wobbleMs` before a step and slides it for `slideMs`; collection depends only on its cell.
+
 ## x2 powerup
 
-At most one x2 node exists. It spawns on a random eligible cell once the run clock passes `boostFirstMs`, and again `boostRespawnMs` after the previous one is collected or overtaken by the Ring, never during an active boost. Landing on it sets `boostUntil = elapsed + boostMs`. Each hop stores its own duration, fixed when the hop begins: `hopMs / boostSpeed` while boosted. Point collections while boosted score double. `pickups` exposes a short sequence-numbered log so the renderer can play bursts without reading the event timeline.
+At most one x2 node exists. It spawns on a random eligible cell once the run clock passes `boostFirstMs`, and again `boostRespawnMs` after the previous one is collected or overtaken by the Ring, never during an active boost. Landing on it sets `boostEndsAt = liveMs + boostMs`: x2 runs on the live clock, so a freeze pauses it (`boostLeft`, `doubleBonus` when both are active). Each hop stores its own duration, fixed when the hop begins: `hopMs / boostSpeed` while boosted. Point collections while boosted score double. `pickups` exposes a short sequence-numbered log so the renderer can play bursts without reading the event timeline.
 
 ## Freeze powerup
 
-The Ring runs on its own clock, `ringMs`, which advances with play except while `elapsed < freezeUntil`. Radius, phase, node value phase, heartbeat and the countdown all read `ringMs`; hops, boosts and spawn timers read `elapsed`. Landing on the freeze node sets `freezeUntil = elapsed + freezeMs`. It spawns like x2 (`freezeFirstMs`, `freezeRespawnMs`, never while frozen). Both powerups spawn at least `powerupRingMargin` cells inside the Ring.
+The Ring runs on its own clock, `ringMs`, which advances with play except while `elapsed < freezeUntil`. Radius, phase, node value phase, heartbeat and the countdown all read `ringMs`. A second clock, `liveMs`, also stops while frozen but is never reset or rewound; the x2 countdown and moving nodes read it. Hops, the freeze itself and spawn timers read `elapsed`. `radiusIn(ms)` forecasts the radius `ms` ahead, allowing for the rest of a freeze. Landing on the freeze node sets `freezeUntil = elapsed + freezeMs`. It spawns like x2 (`freezeFirstMs`, `freezeRespawnMs`, never while frozen). Both powerups spawn at least `powerupRingMargin` cells inside the Ring.
+
+## Reverse tips
+
+`reverseTipsWanted` is read at each restart: tips show until `noteReversal` has counted reversals in `TIP_RUNS` (2) runs on this device (`jerboa_reverse_tips_v1`; each run counts once; without storage they always show). Before the first placement a callout sits above him; for `FX.tipIntroMs` after it, until he reverses, a ring pulses around him. Each frame `routeCrossesRing` walks his cached forecast route up to 4 hops, comparing each cell centre plus the hit radius with the Ring's radius forecast for that hop. A result of 2 or more (a reverse can still save him) shows a red ring and "TAP HIM TO TURN BACK!"; it is announced at most `FX.tipAnnouncements` times a run. Presentation only; the simulation is unaffected.
+
+## Links back to Gametronyx
+
+`VITE_GTX_SITE` (default `https://gametronyx.com`), fixed at build time, is the target of "‹ Gametronyx" in the top bar, "More games" on the end screen, and "gametronyx.com" inside end-screen notes. "More games" ignores taps until the end screen is armed. Score posts use `keepalive` so following a link doesn't cancel one in flight.
 
 ## Ring pulse
 
@@ -110,7 +123,7 @@ The server is the Gametronyx leaderboard server: gametronyx repo, `server/`, at 
   - ignores a repeated `run_id` for the same player;
   - assigns the season itself;
   - ranks only runs whose settings match the season's ranked settings (any seed);
-  - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes.
+  - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes. Playtest 7's 10s are worth 20 with x2, so the score cap must rise to 20 × nodes before Playtest 7 reaches main (DECISIONS U42).
 - **When Jerboa's defaults change** (a new playtest's tuning), the leaderboard needs a new season with the new ranked settings, or new runs are refused as not ranked. See gametronyx `docs/LAUNCH_CHECKLIST.md` Part H.
 
 ## Build, tests and package

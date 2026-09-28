@@ -17,9 +17,9 @@ test('starting board holds at least two 5s (guaranteed) among the opening nodes'
   for(let seed=1;seed<40;seed++){const g=new Game({seed});assert.equal([...g.nodes.values()].filter(v=>v===5).length>=2,true);assert.equal(g.nodes.size,DEFAULTS.nodeCount);}
   assert.equal([...new Game({seed:7,nodeCount:1}).nodes.values()][0],5);
 });
-test('node values span 1-5; each phase shifts the mix toward 5s',()=>{
-  const counts=[1,2,3].map(phase=>{const c={1:0,2:0,3:0,4:0,5:0};let r={state:99};for(let i=0;i<20000;i++){r=randomStep(r.state);c[nodeValue(phase,r.value)]++;}return c;});
-  for(const c of counts)for(const v of [1,2,3,4,5])assert.ok(c[v]>0);
+test('node values span 1-5 and 10; each phase shifts the mix toward 5s',()=>{
+  const counts=[1,2,3].map(phase=>{const c={1:0,2:0,3:0,4:0,5:0,10:0};let r={state:99};for(let i=0;i<20000;i++){r=randomStep(r.state);c[nodeValue(phase,r.value)]++;}return c;});
+  for(const c of counts)for(const v of [1,2,3,4,5,10])assert.ok(c[v]>0);
   assert.ok(counts[0][5]<counts[0][1]/3,'5s are rare in phase 1');
   assert.ok(counts[0][1]>counts[1][1]&&counts[1][1]>counts[2][1],'fewer 1s each phase');
   assert.ok(counts[0][5]<counts[1][5]&&counts[1][5]<counts[2][5],'more 5s each phase');

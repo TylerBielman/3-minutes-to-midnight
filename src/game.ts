@@ -1,11 +1,14 @@
-import {SHAPES,key,same,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
+import {SHAPES,key,cell,same,neighbors,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
 export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number,slots:number};
 export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:10,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000,slots:2};
 export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phases: share of the run and speed relative to the average needed to close on time.
   // Sum of fraction×speed must be 1 so the Ring closes exactly at the time limit. 180 s run → 60 / 80 / 40 s.
   phaseFractions:[1/3,4/9,2/9],phaseSpeeds:[.5,.875,2],nodeRadius:.32,previewLimit:64,simulationStep:16,
-  // Point values 1-5. Relative weights per Ring phase; later phases shift toward 5s.
-  nodeValues:[1,2,3,4,5],phaseValueWeights:[[30,28,22,14,6],[15,20,25,22,18],[6,12,22,28,32]],startingFives:2,
+  // Point values 1-5, plus a rare 10 that moves. Relative weights per Ring phase; later phases shift toward 5s and 10s.
+  nodeValues:[1,2,3,4,5,10],phaseValueWeights:[[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]],startingFives:2,
+  // Moving node (the 10): steps to a neighbouring cell every stepMs ± jitterMs of unfrozen time, within `range` cells
+  // (Chebyshev) of where it spawned. It wobbles for wobbleMs before a step and slides for slideMs (presentation).
+  mover:{value:10,stepMs:2000,jitterMs:400,wobbleMs:500,slideMs:180,range:1},
   // x2 powerup: one on the board at a time, never during an active boost.
   boostFirstMs:10000,boostRespawnMs:15000,
   // Freeze powerup: stops the Ring (and its clock) for freezeMs. One at a time, never while frozen.
@@ -20,6 +23,8 @@ export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phase
   minNodes:2};
 export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'boost'|'freeze',boosted:boolean};
 export type Draft={shapeId:string,turns:number};
+/** A moving node's bookkeeping. Times are on the live clock (`Game.liveMs`), so movers stop while frozen. */
+export type Mover={home:Cell,nextMoveAt:number,from:Cell|null,movedAt:number};
 type Hop={from:Cell,to:Cell,elapsed:number,duration:number};
 const phaseMs=(settings:Settings)=>TUNING.phaseFractions.map(f=>f*settings.duration*1000);
 export function phaseAt(ringMs:number,settings:Settings):number {
@@ -46,6 +51,11 @@ export function nodeValue(phase:number,roll:number):number {
   let pick=roll*total;for(let i=0;i<weights.length;i++){pick-=weights[i];if(pick<0)return TUNING.nodeValues[i];}
   return TUNING.nodeValues[TUNING.nodeValues.length-1];
 }
+/** Cells a moving node can step to from `at`: the four neighbours (fixed N/E/S/W order) that stay on the board, within
+ *  `range` cells of `home`, and pass `ok`. */
+export function moverSteps(at:Cell,home:Cell,range:number,grid:number,ok:(p:Cell)=>boolean):Cell[]{
+  return neighbors(at).filter(p=>p.x>=0&&p.y>=0&&p.x<grid&&p.y<grid&&Math.max(Math.abs(p.x-home.x),Math.abs(p.y-home.y))<=range&&ok(p));
+}
 export class Game {
   readonly settings:Settings;
   board=new Set<string>();visited=new Set<string>();nodes=new Map<string,number>();
@@ -55,13 +65,19 @@ export class Game {
   pieces:{cells:Cell[],shapeId:string}[]=[];lastRemoved:Cell[]=[];
   rotations=0;reversals=0;invalidDrops=0;hops=0;removedPieces=0;removedSquares=0;peakSquares=1;
   nearMisses=0;minClearance:number|null=null;private nearRing=false;
-  boostNode?:Cell;boostUntil=0;boosts=0;private nextBoostAt=TUNING.boostFirstMs;private startingFives=TUNING.startingFives;
+  boostNode?:Cell;boosts=0;private nextBoostAt=TUNING.boostFirstMs;private startingFives=TUNING.startingFives;
+  /** x2 ends when the live clock reaches this, so a freeze pauses the x2 countdown too. */
+  private boostEndsAt=0;
   /** Ring clock: advances with play except while frozen. Drives radius, phase, pulse and the countdown. */
   ringMs=0;freezeNode?:Cell;freezeUntil=0;freezes=0;private nextFreezeAt=TUNING.freezeFirstMs;
+  /** Live clock: play time that a freeze stops (the x2 countdown, moving nodes). Unlike ringMs it is never reset. */
+  liveMs=0;
+  /** Moving nodes, keyed by their current cell (a subset of `nodes`). */
+  movers=new Map<string,Mover>();moversCollected=0;
   pickups:Pickup[]=[];pickupSeq=0;
   events:{ms:number,type:string,data:unknown}[]=[];droppedEvents=0;
   record(type:string,data:unknown={}){if(this.events.length<5000)this.events.push({ms:Math.round(this.elapsed),type,data});else this.droppedEvents++;}
-  private pieceRng:number;private nodeRng:number;private navRng:number;
+  private pieceRng:number;private nodeRng:number;private navRng:number;private moverRng:number;
   constructor(settings:Partial<Settings>={}){
     this.settings={...DEFAULTS,...settings};
     const s=this.settings;
@@ -73,7 +89,7 @@ export class Game {
     s.boostSpeed=Number.isFinite(s.boostSpeed)?Math.max(1,Math.min(3,s.boostSpeed)):DEFAULTS.boostSpeed;
     s.boostMs=Number.isFinite(s.boostMs)?Math.max(500,Math.min(30000,s.boostMs)):DEFAULTS.boostMs;
     s.freezeMs=Number.isFinite(s.freezeMs)?Math.max(500,Math.min(30000,s.freezeMs)):DEFAULTS.freezeMs;
-    s.seed=s.seed>>>0;this.pieceRng=s.seed;this.nodeRng=s.seed^0xA9E3779B;this.navRng=s.seed^0x71B54A35;
+    s.seed=s.seed>>>0;this.pieceRng=s.seed;this.nodeRng=s.seed^0xA9E3779B;this.navRng=s.seed^0x71B54A35;this.moverRng=s.seed^0x3C6EF372;
     this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};
     this.board.add(key(this.at));this.visited.add(key(this.at));
     this.pieces.push({cells:[{...this.at}],shapeId:'Start'});
@@ -83,7 +99,13 @@ export class Game {
   }
   get radius(){return ringRadius(this.ringMs,this.settings);}
   get frozen(){return this.elapsed<this.freezeUntil;}
-  get boosted(){return this.elapsed<this.boostUntil;}
+  get boosted(){return this.liveMs<this.boostEndsAt;}
+  /** x2 time left (ms); it stands still while frozen. */
+  get boostLeft(){return Math.max(0,this.boostEndsAt-this.liveMs);}
+  /** x2 and freeze together: double points while the Ring and the x2 countdown both wait. */
+  get doubleBonus(){return this.boosted&&this.frozen;}
+  /** The Ring's radius `ms` from now, allowing for the rest of any freeze. */
+  radiusIn(ms:number){return ringRadius(this.ringMs+Math.max(0,ms-Math.max(0,this.freezeUntil-this.elapsed)),this.settings);}
   get phase(){return phaseAt(this.ringMs,this.settings);}
   /** Pieces longer than the Ring is wide are not dealt. */
   get maxPieceLength(){return Math.max(1,Math.floor(this.radius*2));}
@@ -167,9 +189,41 @@ export class Game {
     }
     return path;
   }
+  /** Put a point node on a cell. A 10 becomes a moving node; its first step time comes from the mover stream. */
+  addNode(p:Cell,value:number){
+    const k=key(p);this.nodes.set(k,value);this.movers.delete(k);
+    if(value===TUNING.mover.value)this.movers.set(k,{home:{...p},nextMoveAt:this.nextMoverStep(),from:null,movedAt:-Infinity});
+  }
+  /** Every node removal goes through here, so a later node on the same cell never inherits mover state. */
+  private dropNode(k:string){this.nodes.delete(k);this.movers.delete(k);}
+  private nextMoverStep(){
+    const r=randomStep(this.moverRng);this.moverRng=r.state;
+    return this.liveMs+TUNING.mover.stepMs+(r.value*2-1)*TUNING.mover.jitterMs;
+  }
+  /** Due movers step to a random allowed neighbour. A mover never leaves, or steps onto, the cell he is hopping to. */
+  private stepMovers(){
+    if(!this.movers.size||this.frozen)return;
+    const center=(this.settings.grid-1)/2;
+    const ok=(p:Cell)=>{
+      const k=key(p);
+      if(this.nodes.has(k)||(this.boostNode&&same(p,this.boostNode))||(this.freezeNode&&same(p,this.freezeNode))||same(p,this.at)||(this.hop&&same(p,this.hop.to)))return false;
+      if(this.settings.spawn==='uncovered'&&this.board.has(k))return false;
+      return Math.hypot(p.x-center,p.y-center)+TUNING.nodeRadius<this.radius;
+    };
+    for(const [k,m] of [...this.movers]){
+      if(m.nextMoveAt>this.liveMs)continue;
+      const at=cell(k);
+      const steps=this.hop&&same(this.hop.to,at)?[]:moverSteps(at,m.home,TUNING.mover.range,this.settings.grid,ok);
+      if(!steps.length){m.nextMoveAt=this.nextMoverStep();continue;}
+      const r=randomStep(this.moverRng);this.moverRng=r.state;const to=steps[Math.floor(r.value*steps.length)],value=this.nodes.get(k)!;
+      this.nodes.delete(k);this.movers.delete(k);this.nodes.set(key(to),value);
+      this.movers.set(key(to),{home:m.home,nextMoveAt:this.nextMoverStep(),from:at,movedAt:this.liveMs});
+      this.record('node-move',{from:at,to});
+    }
+  }
   private refillNodes(){
     const center=(this.settings.grid-1)/2;
-    for(const k of this.nodes.keys()){const [x,y]=k.split(',').map(Number);if(Math.hypot(x-center,y-center)+TUNING.nodeRadius>=this.radius)this.nodes.delete(k);}
+    for(const k of this.nodes.keys()){const [x,y]=k.split(',').map(Number);if(Math.hypot(x-center,y-center)+TUNING.nodeRadius>=this.radius)this.dropNode(k);}
     if(this.boostNode&&Math.hypot(this.boostNode.x-center,this.boostNode.y-center)+TUNING.nodeRadius>=this.radius){this.boostNode=undefined;this.nextBoostAt=this.elapsed+TUNING.boostRespawnMs;this.record('boost-lost');}
     if(this.freezeNode&&Math.hypot(this.freezeNode.x-center,this.freezeNode.y-center)+TUNING.nodeRadius>=this.radius){this.freezeNode=undefined;this.nextFreezeAt=this.elapsed+TUNING.freezeRespawnMs;this.record('freeze-lost');}
     const eligible:Cell[]=[];
@@ -184,7 +238,7 @@ export class Game {
       r=randomStep(this.nodeRng);this.nodeRng=r.state;
       // The opening board guarantees a couple of 5s to pull the player outward.
       const value=this.startingFives>0?5:nodeValue(this.phase,r.value);if(this.startingFives>0)this.startingFives--;
-      this.nodes.set(key(p),value);
+      this.addNode(p,value);
     }
     const center2=(this.settings.grid-1)/2;
     const powerupCells=()=>eligible.filter(p=>Math.hypot(p.x-center2,p.y-center2)+TUNING.nodeRadius<this.radius-TUNING.powerupRingMargin);
@@ -201,7 +255,7 @@ export class Game {
     let remaining=deltaMs;
     while(remaining>0&&!this.over){
       const dt=Math.min(remaining,TUNING.simulationStep,this.hop?this.hop.duration-this.hop.elapsed:Infinity);
-      remaining-=dt;if(!this.frozen)this.ringMs+=dt;this.elapsed+=dt;if(this.hop)this.hop.elapsed+=dt;
+      remaining-=dt;if(!this.frozen){this.ringMs+=dt;this.liveMs+=dt;}this.elapsed+=dt;if(this.hop)this.hop.elapsed+=dt;
       const p=this.position,center=(this.settings.grid-1)/2;
       // Ground footprint, not the decorative vertical hop. Check before awarding pickups.
       const clearance=this.radius-Math.hypot(p.x-center,p.y-center)-this.settings.hitRadius;
@@ -212,7 +266,7 @@ export class Game {
       if(this.hop&&this.hop.elapsed>=this.hop.duration){
         this.previous=this.hop.from;this.at=this.hop.to;this.hop=undefined;this.visited.add(key(this.at));this.hops++;this.record('hop',{at:this.at});
         if(this.boostNode&&same(this.boostNode,this.at)){
-          this.boostNode=undefined;this.boostUntil=this.elapsed+this.settings.boostMs;this.nextBoostAt=this.elapsed+TUNING.boostRespawnMs;this.boosts++;
+          this.boostNode=undefined;this.boostEndsAt=this.liveMs+this.settings.boostMs;this.nextBoostAt=this.elapsed+TUNING.boostRespawnMs;this.boosts++;
           this.record('boost',{at:this.at});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'boost',boosted:true});
         }
         if(this.freezeNode&&same(this.freezeNode,this.at)){
@@ -221,12 +275,15 @@ export class Game {
         }
         const value=this.nodes.get(key(this.at));
         if(value!==undefined){
-          const boosted=this.boosted,points=boosted?value*2:value;this.score+=points;this.collected++;this.nodes.delete(key(this.at));
+          const boosted=this.boosted,points=boosted?value*2:value;this.score+=points;this.collected++;
+          if(this.movers.has(key(this.at)))this.moversCollected++;this.dropNode(key(this.at));
           this.record('collect',{at:this.at,value,points});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points,kind:'point',boosted});
         }
         if(this.pickups.length>20)this.pickups.splice(0,this.pickups.length-20);
         this.beginHop();this.revision++;
       }
+      // After beginHop, so a mover knows the cell he is now committed to.
+      this.stepMovers();
       this.refillNodes();
     }
   }
