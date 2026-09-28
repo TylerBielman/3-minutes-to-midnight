@@ -37,7 +37,7 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 
 ## Playtest 7 pass
 
-1. Fresh browser (or clear site data): before placing, a callout above him says to tap him once he's moving. After the first placement a cyan ring pulses around him for a few seconds.
+1. Fresh browser (or clear site data): for 4 s a callout at the top of the Ring says to tap him once he's moving, clear of where the first pieces go. After the first placement "TAP HIM TO TURN BACK" shows there for 3 s while a cyan ring pulses around him.
 2. Build a long road toward the Ring. A few hops before he'd cross it, a red ring and "TAP HIM TO TURN BACK!" appear. Tap him; he turns back.
 3. After reversing in two runs, the tips stop appearing.
 4. Find a 10 (larger gold disk, bright rim). It wobbles, then hops to a neighbouring cell about every 2 s, never more than one cell from where it appeared. Build to it: once he is hopping onto it, it stays put and pays 10 (20 with x2).

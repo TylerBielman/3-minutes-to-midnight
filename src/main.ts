@@ -176,15 +176,16 @@ function drawPower(kind:PowerKind,x:number,y:number,s:number,now:number){
   ctx.restore();text(look.glyph,x,y+look.dy,Math.max(10,s*look.size),look.ink,'center');
 }
 // Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
-// tipIntroMs: how long "tap him" pulses after the first placement; tipAnnouncements: danger announcements per run.
-const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,roundSurgeMs:2800,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipIntroMs:6000,tipAnnouncements:3};
+// tipStartMs: how long the start tip shows before the first placement; tipIntroMs: how long "tap him" shows after it
+// (Tyler, Playtest 7: shorter, and at the top of the Ring). tipAnnouncements: danger announcements per run.
+const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,roundSurgeMs:2800,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipStartMs:4000,tipIntroMs:3000,tipAnnouncements:3};
 const startMessage=()=>game.goal!==null?`Round 1: score ${game.goal} to clear it. Drag a piece up to start.`:'Tap a piece to rotate. Drag up to start.';
 let message=roundsNote||startMessage(),messageColor=roundsNote?color.red:color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
 let lastPhase=1,phaseSurgeAt=-Infinity,roundSurgeAt=-Infinity,lastPickupSeq=0,roundNews='';
 // Reverse tips (DECISIONS U38) are decided per run and stop once the player has reversed in two runs on this device.
-let reverseTips=reverseTipsWanted(gtxStore),tipCounted=false,firstPlacedAt=-Infinity,dangerIndex=-1,dangerAnnounced=0,wasDoubleBonus=false;
+let reverseTips=reverseTipsWanted(gtxStore),tipCounted=false,readyAt=performance.now(),firstPlacedAt=-Infinity,dangerIndex=-1,dangerAnnounced=0,wasDoubleBonus=false;
 type Particle={x:number,y:number,vx:number,vy:number,born:number,tint:string};
 type Floater={x:number,y:number,label:string,born:number,tint:string};
 let particles:Particle[]=[],floaters:Floater[]=[];
@@ -255,7 +256,7 @@ canvas.addEventListener('pointerup',event=>{
 canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);window.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();checkpoint();}});
 function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings,roundSet());runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;roundSurgeAt=-Infinity;lastPickupSeq=0;roundNews='';particles=[];floaters=[];
-  reverseTips=reverseTipsWanted(gtxStore);tipCounted=false;firstPlacedAt=-Infinity;dangerIndex=-1;dangerAnnounced=0;wasDoubleBonus=false;
+  reverseTips=reverseTipsWanted(gtxStore);tipCounted=false;readyAt=performance.now();firstPlacedAt=-Infinity;dangerIndex=-1;dangerAnnounced=0;wasDoubleBonus=false;
   announce(startMessage());}
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
 document.querySelector('#tune')!.addEventListener('click',()=>{
@@ -372,7 +373,7 @@ function draw(now:number){
   if(game.magnetActive&&game.round.magnet){ctx.save();ctx.globalAlpha=.35+.15*Math.sin(now/160);ctx.strokeStyle=POWER_LOOK.magnet.tint;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,(game.round.magnet.range+.3)*scale(),0,Math.PI*2);ctx.stroke();ctx.restore();}
   ctx.fillStyle=game.over?color.red:game.boosted?color.boost:game.sped?POWER_LOOK.speed.tint:color.ink;ctx.beginPath();ctx.arc(p.x,p.y-bounce,5,0,Math.PI*2);ctx.fill();
   ctx.lineWidth=2;ctx.strokeStyle=color.ink;ctx.beginPath();ctx.moveTo(p.x-2,p.y-bounce-3);ctx.lineTo(p.x-3,p.y-bounce-9);ctx.moveTo(p.x+2,p.y-bounce-3);ctx.lineTo(p.x+4,p.y-bounce-9);ctx.stroke();
-  drawReverseTip(now,p);
+  drawReverseTip(now,p,center.y-radius);
   particles=particles.filter(q=>now-q.born<FX.burstMs);floaters=floaters.filter(f=>now-f.born<FX.burstMs*1.4);
   for(const q of particles){const t=now-q.born,k=t/FX.burstMs;ctx.globalAlpha=1-k;ctx.fillStyle=q.tint;ctx.beginPath();ctx.arc(q.x+q.vx*t,q.y+q.vy*t,3*(1-k)+1,0,Math.PI*2);ctx.fill();}
   for(const f of floaters){const k=(now-f.born)/(FX.burstMs*1.4);ctx.globalAlpha=1-k*k;text(f.label,f.x,f.y-k*26,15+4*(1-k),f.tint,'center');}
@@ -403,18 +404,25 @@ function draw(now:number){
   ctx.font='400 11px system-ui, sans-serif';const fit=Math.max(8,Math.min(11,11*374/Math.max(1,ctx.measureText(message).width)));
   text(message,195,591,fit,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
 }
-/** Reverse tips (DECISIONS U38): before the start, for a few seconds after it, and whenever his route is about to
- *  cross the Ring while a reverse can still save him. A ring around him and a callout above him, kept on the board. */
-function drawReverseTip(now:number,p:Cell){
+/** Reverse tips (DECISIONS U38, U46): briefly before the start and just after it, near the top of the Ring so the first
+ *  pieces' spots stay clear; and whenever his route is about to cross the Ring while a reverse can still save him, as a
+ *  callout above him. Each comes with a ring around him. */
+function drawReverseTip(now:number,p:Cell,ringTop:number){
   if(!reverseTips||game.over)return;
   const danger=game.running&&dangerIndex>=2&&!game.reverseQueued;
-  const label=!game.running?'ONCE HE’S MOVING, TAP HIM TO TURN HIM BACK':danger?'TAP HIM TO TURN BACK!':now-firstPlacedAt<FX.tipIntroMs&&!game.reversals?'TAP HIM TO TURN BACK':'';
+  const shown=!game.running?now-readyAt:now-firstPlacedAt,span=!game.running?FX.tipStartMs:FX.tipIntroMs;
+  const intro=!danger&&shown<span&&!game.reversals;
+  const label=danger?'TAP HIM TO TURN BACK!':!intro?'':game.running?'TAP HIM TO TURN BACK':'ONCE HE’S MOVING, TAP HIM TO TURN HIM BACK';
   if(!label)return;
   const tint=danger?color.red:color.route,pulse=.5+.5*Math.sin(now/(danger?90:180));
-  ctx.save();ctx.globalAlpha=.55+.45*pulse;ctx.strokeStyle=tint;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,14+5*pulse,0,Math.PI*2);ctx.stroke();ctx.restore();
+  // The start tips fade over their last half second.
+  ctx.save();ctx.globalAlpha=danger?1:Math.min(1,(span-shown)/500);
+  ctx.save();ctx.globalAlpha*=.55+.45*pulse;ctx.strokeStyle=tint;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,14+5*pulse,0,Math.PI*2);ctx.stroke();ctx.restore();
   ctx.font=`600 11px system-ui, sans-serif`;const w=ctx.measureText(label).width+16,h=20;
-  const x=Math.max(BOARD_X+4+w/2,Math.min(BOARD_X+BOARD_SIZE-4-w/2,p.x)),y=p.y-36<BOARD_Y+h?p.y+34:p.y-36;
+  const x=Math.max(BOARD_X+4+w/2,Math.min(BOARD_X+BOARD_SIZE-4-w/2,danger?p.x:195));
+  const y=danger?(p.y-36<BOARD_Y+h?p.y+34:p.y-36):Math.max(BOARD_Y+h,ringTop+24);
   roundRect(x-w/2,y-h/2,w,h,h/2,'#0b141c99',tint);text(label,x,y+.5,11,danger?color.red:color.ink,'center');
+  ctx.restore();
 }
 function frame(now:number){
   game.advance(now-lastTime);lastTime=now;
