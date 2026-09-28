@@ -35,6 +35,24 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 12. After a run, open Runs and export the report. Check it remains after refreshing. Share the JSON or copyable report when discussing the run.
 13. Try Tune: one-minute run, larger cells (15×15), slower hops. Use the same seed to compare settings.
 
+## Playtest 7 pass
+
+1. Fresh browser (or clear site data): for 4 s a callout at the top of the Ring says "Once he's moving, you can tap him to turn him back", clear of where the first pieces go. After the first placement "You can tap him to turn him back" shows there for 3 s while a cyan ring pulses around him.
+2. Build a long road toward the Ring. A few hops before he'd cross it, a red ring and "You can tap him to turn him back!" appear. Tap him; he turns back.
+3. After reversing in two runs, the tips stop appearing.
+4. Find a 10 (larger gold disk, bright rim). It wobbles, then hops to a neighbouring cell about every 2 s, never more than one cell from where it appeared. Build to it: once he is hopping onto it, it stays put and pays 10 (20 with x2).
+5. Collect x2, then freeze (or freeze, then x2): the phase line reads DOUBLE BONUS, the x2 bar shows ❄ and stops, and moving 10s stand still until the thaw.
+6. "‹ Gametronyx" in the top bar and "More games" on the end screen open gametronyx.com in the same tab. Without a session, "gametronyx.com" in the end-screen note is a link. On a 320-px-wide phone the top bar fits.
+
+## Rounds trial pass
+
+1. Tune → Mode → Rounds (or open `?mode=rounds`). The top line reads `ROUND 1/4 · 0/20`; Ring length, hop and node settings are greyed out.
+2. Score 20: the round clears at once. The Ring blooms back to full and holds for a moment, "ROUND 2 · GOAL 40" shows, fresh nodes appear, and the road stays. His hops get a little quicker.
+3. Freeze appears from round 2. In Midnight (the last round) there is no goal; the run ends when the Ring catches him. The end screen says which round you reached, and that Rounds isn't on the leaderboard.
+4. Open the designer (Tune → Design rounds…, or `designer.html`). Change a goal, a Ring length and the point values; watch the chart. Play: the game starts your set. Copy share link on the PC, open it on the phone.
+5. Say whether the goals feel reachable, whether clearing a round is exciting, and whether each round should be shorter or longer.
+6. New powerups, as the rounds unlock them: cherries (collect 2 for +10), sweep ✦ (takes every lowest-value node), magnet U (a pink ring; he grabs points within 2 cells for 6 s), speed » (faster hops, no bonus) and expand ↔ (the Ring steps back 1.5 cells). Is each one readable at a glance, and worth steering toward?
+
 ## Record observations
 
 - Device/browser, portrait dimensions, seed and Tune values.

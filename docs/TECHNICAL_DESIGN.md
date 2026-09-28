@@ -6,6 +6,8 @@
 - `src/game.ts`: pure simulation, settings/tuning, three draft slots, mutable board/visit sets and ordered placed-piece records, point nodes, selected/in-flight hops, future route forecast, score and Ring lifecycle.
 - `src/main.ts`: native Pointer Events input, Canvas 2D renderer, responsive portrait layout, route arrows/color, legality ghosts, announcements, results, Tune panel and restart.
 - `src/input.ts`: pure direction/threshold classification for tap, drag and downward discard.
+- `src/rounds.ts`: round configs: a round's Ring length, phases (share, speed, pulse, node value weights), hop speed, node count, opening 5s and powerup timers; the Ring radius/phase/beat functions per round; `parseRoundSet` clamps sets from outside (pure, dependency-free). Classic is one round with no goal, built from `Settings` + `TUNING` (`classicSet` in `src/game.ts`), so Tune and URL overrides still apply. `Game` reads everything per-round through `game.round`.
+- `src/tips.ts`: reverse tips: whether they still show on this device, counting runs with a reversal, and where his forecast route meets the Ring (pure).
 - `src/stats.ts`: versioned run reports, bounded local history, storage-failure handling and JSON export.
 - `src/gtx.ts`: Gametronyx launch handoff, feedback, and posting scores with a retry queue (pure; fetch and storage are passed in).
 - `src/leaderboard.ts`: ranked-settings check, API board validation, this device's fallback board, board rows with gaps, the scroll that puts the player a third of the way down, and the end-of-run cheer (pure).
@@ -49,17 +51,29 @@ The jerboa's ground center interpolates along the committed edge. Capture occurs
 
 One seed initializes three independent streams (pieces, nodes, navigation). Drawing a piece samples a group, then a uniform member. Rotation and cancelled placement do not consume draws. Swiping or successful placement consumes one new piece.
 
-Nodes spawn uniformly on eligible cells inside the current Ring. Values 1–5 are drawn from the current phase's weights in `TUNING.phaseValueWeights`, shifting toward 5s each phase. The first two spawns of a run are 5s. Existing runway is eligible; the current source cell, committed landing cell and existing node cells are excluded. Node disks must fit fully inside the Ring. Expired or collected nodes replenish; if eligible space is exhausted, the pool may shrink. No path reachability or helpfulness filter is used.
+Nodes spawn uniformly on eligible cells inside the current Ring. Values 1–5 and 10 are drawn from the current phase's weights in `TUNING.phaseValueWeights`, shifting toward 5s and 10s each phase. The first two spawns of a run are 5s. Existing runway is eligible; the current source cell, committed landing cell and existing node cells are excluded. Node disks must fit fully inside the Ring. Expired or collected nodes replenish; if eligible space is exhausted, the pool may shrink. No path reachability or helpfulness filter is used.
 
 The engine has a `spawn: 'uncovered'` option as a future experimental seam, but the shipped UI/default always uses `random`. No smart behavior is implemented.
 
+## Moving 10s
+
+A 10 is a moving node. Its value stays in `nodes` (so spawning exclusions, Ring removal and reports treat it like any node) and `movers` holds its home cell and next step time, keyed by its current cell. Every removal goes through `dropNode`, so a later node on the same cell never inherits mover state. Each simulation slice, after landing and `beginHop`, `stepMovers` moves each due mover to a random orthogonal neighbour within `TUNING.mover.range` (Chebyshev) of home that is on the board, inside the Ring by its disk, and free of nodes, powerups, his cell and his committed landing cell (`moverSteps`). A mover on his landing cell never moves. Step times are on the live clock (below), so movers wait while frozen and before the run starts. Movers draw from their own random stream (`moverRng`), leaving node spawns for a seed unchanged. The renderer wobbles a mover during `wobbleMs` before a step and slides it for `slideMs`; collection depends only on its cell.
+
 ## x2 powerup
 
-At most one x2 node exists. It spawns on a random eligible cell once the run clock passes `boostFirstMs`, and again `boostRespawnMs` after the previous one is collected or overtaken by the Ring, never during an active boost. Landing on it sets `boostUntil = elapsed + boostMs`. Each hop stores its own duration, fixed when the hop begins: `hopMs / boostSpeed` while boosted. Point collections while boosted score double. `pickups` exposes a short sequence-numbered log so the renderer can play bursts without reading the event timeline.
+At most one x2 node exists. It spawns on a random eligible cell once the run clock passes `boostFirstMs`, and again `boostRespawnMs` after the previous one is collected or overtaken by the Ring, never during an active boost. Landing on it sets `boostEndsAt = liveMs + boostMs`: x2 runs on the live clock, so a freeze pauses it (`boostLeft`, `doubleBonus` when both are active). Each hop stores its own duration, fixed when the hop begins: `hopMs / boostSpeed` while boosted. Point collections while boosted score double. `pickups` exposes a short sequence-numbered log so the renderer can play bursts without reading the event timeline.
 
 ## Freeze powerup
 
-The Ring runs on its own clock, `ringMs`, which advances with play except while `elapsed < freezeUntil`. Radius, phase, node value phase, heartbeat and the countdown all read `ringMs`; hops, boosts and spawn timers read `elapsed`. Landing on the freeze node sets `freezeUntil = elapsed + freezeMs`. It spawns like x2 (`freezeFirstMs`, `freezeRespawnMs`, never while frozen). Both powerups spawn at least `powerupRingMargin` cells inside the Ring.
+The Ring runs on its own clock, `ringMs`, which advances with play except while `elapsed < freezeUntil`. Radius, phase, node value phase, heartbeat and the countdown all read `ringMs`. A second clock, `liveMs`, also stops while frozen but is never reset or rewound; the x2 countdown and moving nodes read it. Hops, the freeze itself and spawn timers read `elapsed`. `radiusIn(ms)` forecasts the radius `ms` ahead, allowing for the rest of a freeze. Landing on the freeze node sets `freezeUntil = elapsed + freezeMs`. It spawns like x2 (`freezeFirstMs`, `freezeRespawnMs`, never while frozen). Both powerups spawn at least `powerupRingMargin` cells inside the Ring.
+
+## Reverse tips
+
+`reverseTipsWanted` is read at each restart: tips show until `noteReversal` has counted reversals in `TIP_RUNS` (2) runs on this device (`jerboa_reverse_tips_v1`; each run counts once; without storage they always show). For `FX.tipStartMs` (4 s) after a run is ready, and for `FX.tipIntroMs` (3 s) after the first placement until he reverses, a callout sits just inside the top of the Ring (clear of the first pieces' spots) and a ring pulses around him; both fade over their last half second. Each frame `routeCrossesRing` walks his cached forecast route up to 4 hops, comparing each cell centre plus the hit radius with the Ring's radius forecast for that hop. A result of 2 or more (a reverse can still save him) shows a red ring and "YOU CAN TAP HIM TO TURN HIM BACK!"; it is announced at most `FX.tipAnnouncements` times a run. Presentation only; the simulation is unaffected.
+
+## Links back to Gametronyx
+
+`VITE_GTX_SITE` (default `https://gametronyx.com`), fixed at build time, is the target of "‹ Gametronyx" in the top bar, "More games" on the end screen, and "gametronyx.com" inside end-screen notes. "More games" ignores taps until the end screen is armed. Score posts use `keepalive` so following a link doesn't cancel one in flight.
 
 ## Ring pulse
 
@@ -110,8 +124,26 @@ The server is the Gametronyx leaderboard server: gametronyx repo, `server/`, at 
   - ignores a repeated `run_id` for the same player;
   - assigns the season itself;
   - ranks only runs whose settings match the season's ranked settings (any seed);
-  - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes.
+  - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes. Playtest 7's 10s are worth 20 with x2, so the score cap must rise to 20 × nodes before Playtest 7 reaches main (DECISIONS U42).
 - **When Jerboa's defaults change** (a new playtest's tuning), the leaderboard needs a new season with the new ranked settings, or new runs are refused as not ranked. See gametronyx `docs/LAUNCH_CHECKLIST.md` Part H.
+
+## Rounds trial
+
+`new Game(settings, roundSet)` plays a set of rounds. `ringMs` is time within the round; `ringTotalMs` covers the run (run reports' `ringSeconds`). Each point collected adds to `roundScore`; after a landing's pickups, reaching the round's goal calls `clearRound`: log the round, advance `roundIndex`, reset `roundScore` and `ringMs`, hold the Ring for `TUNING.roundHoldMs`, drop every node (the refill at the end of the step deals the new round's full set, with its opening 5s), drop powerups the new round lacks, reset `nearRing`, restart the powerup timing, and push a `round` pickup for the renderer. Everything derived from the Ring's radius (node target, road cap, longest piece) resets by itself. The next hop uses the new round's hop speed. A set that is not parsed can't clear past its last round.
+
+Rounds with a `spawner` place powerups through `spawnPowerup` (own random stream, `powerRng`); Classic keeps its per-powerup timers and draw order. `main.ts` keeps the mode outside `Settings`: Tune's Mode select or `?mode=rounds[&set=custom]`. The HUD shows `ROUND n/N · score/goal` with a gold progress bar; a round change shows a bloom and banner instead of the phase banner (which now fires only when the phase rises). Reports add `mode`, `round`, `roundsTotal`, `roundsCleared`, `roundLog` and `roundSet` (a custom set in full). `isRankedReport` keeps Rounds runs off the leaderboard and the Classic device board.
+
+## Rounds powerups
+
+Powerups on the board live in `powerNodes` (cell → kind). Landing on one calls `usePower`; point nodes go through `collect(k, via)`, which scores, doubles under x2, adds to the round's goal, counts movers, and logs the collection (`via` sweep or magnet when not a landing). Expand rewinds `ringMs` to the time the round's Ring had a radius 1.5 cells larger (`roundMsForRadius`, the inverse of `roundRadius`). Sweep collects every node of the board's lowest value. Magnet and speed end on the live clock (`magnetEndsAt`, `speedEndsAt`), so a freeze pauses them; while the magnet runs, each landing also collects nodes within its range. Hop duration uses the larger of the x2 and speed multipliers. Cherries count across the run and pay a bonus per set. The spawner places a kind only when the round has its settings and a weight, it isn't on the board and its effect isn't running (`canSpawn`); a new round removes kinds it lacks from the board. Powerups lost to the Ring are checked in a fixed kind order so Classic's event log is unchanged.
+
+## Round designer
+
+`designer.html` + `src/designer.ts` (a second Vite entry). It edits a working copy of a set, stores it under `jerboa_custom_rounds_v1` whenever it is valid, and draws the Ring across the whole run (`ringTimeline`: every round at full length) as an SVG line with a crosshair readout and a table view. Play stores the parsed set and opens `index.html?mode=rounds&set=custom`; the game falls back to the built-in set, with a message, if that set can't be read. Share links carry the set as URL-safe base64 (`encodeRoundSet`/`decodeRoundSet`). All links are relative, so branch builds work.
+
+## Golden replay
+
+`tests/replay.test.mjs` plays whole Classic runs with a deterministic bot through the public API and compares counters, clocks, board, nodes and an event-log hash with `tests/golden/replay-v1.json`. Refactors must pass it unchanged; after an intended gameplay change, rewrite it with `UPDATE_GOLDEN=1 npm test` and say why in the commit.
 
 ## Build, tests and package
 

@@ -73,6 +73,7 @@ test('a finished run posts under the session and the reply is the board',async()
   const result=await submitScore(fetchFn,'https://api.test','tok',run);
   assert.equal(seen.url,'https://api.test/api/leaderboards/jerboa/scores');assert.equal(seen.init.method,'POST');
   assert.equal(seen.init.headers.Authorization,'Bearer tok');assert.deepEqual(JSON.parse(seen.init.body),run);
+  assert.equal(seen.init.keepalive,true,'the post survives a tap on a Gametronyx link');
   assert.equal(result.ok,true);assert.equal(result.board.rank,4);assert.equal(result.board.entries.at(-1).name,'tyler');
 });
 

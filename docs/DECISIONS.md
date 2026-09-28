@@ -219,3 +219,61 @@ Source: Tyler's request for a leaderboard based on player usernames, then "Show 
 | L-08 | The server owns the leaderboard: it assigns the season name and ranks each player by their best score this season. The game only displays the result. The API contract is in `docs/TECHNICAL_DESIGN.md` (Leaderboard end screen). | Per Tyler (gametronyx U24), the server is the Gametronyx leaderboard server in the gametronyx repo (`server/`), not the accounts API. Live at `scores.gametronyx.com` since 2026-09-27. |
 | L-09 | Scores go to `VITE_SCORES_API` (default `https://scores.gametronyx.com`), fixed at build time like the accounts address. | A URL override could send the session token elsewhere (G-06). |
 
+
+## Playtest 7 — 2026-09-28 (issues #7–#12)
+
+Source: Tyler's issues #7 (reverse tip), #8 (x2 + freeze), #9 (new powerups), #10 (moving higher points), #11 (link to gametronyx.com) and #12 (rounds and a design tool), talked through question by question. This build ships U38–U42. U43–U45 are approved and come next (plan: Rounds, then the powerups). Supersedes U24's "values 1–5", P3-06's "boost time is game time", P4-01's "x2 timer keeps running", and, for Rounds mode only, U16.
+
+### Confirmed with Tyler
+
+| ID | Decision |
+| --- | --- |
+| U38 | Reversing stays tap-the-jerboa (U09 unchanged). A tip at the start and a flash when his route is about to cross the Ring teach it. Both stop once the player has reversed in 2 runs on this device. |
+| U39 | Link back to gametronyx.com: "More games" under Play again, "‹ Gametronyx" in the top bar, and the no-session note links to the site. Home page, same tab. |
+| U40 | Freeze stops time: the Ring, the x2 countdown and moving nodes all wait. x2 and freeze together is a DOUBLE BONUS state. |
+| U41 | A new, rare higher value (10) joins the normal node pool, likelier in later phases. Only it moves: a step to a neighbouring cell about every 2 s after a short wobble, within 1 cell of where it spawned, and never away from the cell he is hopping to. |
+| U42 | Start a new season when Playtest 7 ships. Before it reaches main, the leaderboard server's score cap rises from 10 × nodes to 20 × nodes (a doubled 10 is worth 20), prepared by the agent in the gametronyx repo for Tyler to deploy. |
+| U43 | Rounds, as an unranked trial mode (Classic stays ranked): each round has its own points goal counted from 0 (20, 40, …). Scoring it clears the round at once: the Ring resets to full, the next round is faster, and the point nodes are replaced with the new round's set. Missing it, the Ring catches him. The last round is a Midnight finale with no goal. |
+| U44 | The round design tool is a page in this game (`designer.html`). |
+| U46 | (Playtest 7 feedback: moving node and double bonus good.) The first "tap him" tip shows for less time and sits near the top of the Ring, so it doesn't cover where the first pieces go. Supersedes the start-tip timing and position in P7-05. |
+| U47 | The reverse tips read as an option, not a command: "Once he's moving, you can tap him to turn him back", "You can tap him to turn him back", and in the danger flash "You can tap him to turn him back!". Supersedes the tip wording in P7-05 and P7-22. |
+| U45 | New powerups after Rounds, unlocked by round through one spawner: Magnet (he collects points near him), Speed (its own powerup, no scoring bonus), Cherries (a set pays bonus points), Sweep (collects the lowest value on the board), Expand (pushes the Ring out a fixed distance; it may return to an earlier phase). |
+
+### Agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P7-01 | 10s are about 1% / 3% / 6% of new nodes in phases 1 / 2 / 3 (weights 1 / 3 / 6 beside the 1–5 weights). The two opening 5s are unchanged. | "Rare", but a few per run. `TUNING.phaseValueWeights`. |
+| P7-02 | A 10 steps every 2 s ± 0.4 s of unfrozen time, orthogonally, within 1 cell (Chebyshev) of its spawn cell, onto free cells inside the Ring (never another node, a powerup, his cell or the cell he is hopping to). It wobbles for 0.5 s before a step and slides for 0.18 s. Boxed in, it waits for the next try. Before the first placement it stays still. | `TUNING.mover`. Moves use their own random stream, so a seed still deals the same nodes. |
+| P7-03 | Freeze pauses x2 by running x2 on a live clock that stops while frozen (`Game.liveMs`). An x2 collected during a freeze starts counting at the thaw. The x2 respawn delay still runs on real time, and x2 still never spawns during a boost. | `boostLeft`, `doubleBonus` in `src/game.ts`. |
+| P7-04 | DOUBLE BONUS: the phase line reads DOUBLE BONUS in violet, the x2 bar shows ❄ and stops shrinking, a violet shimmer sits inside the blue Ring, and a "DOUBLE BONUS!" burst plays when it starts. | `src/main.ts`. |
+| P7-05 | Start tip: a callout above him before the first placement ("Once he's moving, tap him to turn him back"), then a pulsing "TAP HIM TO TURN BACK" ring for 6 s after it, until he reverses. Danger flash: when his forecast route meets the Ring 2–4 hops ahead (1 hop ahead is the hop in flight, which a reverse can't change), a red ring and "TAP HIM TO TURN BACK!", announced at most 3 times a run. | `src/tips.ts`, `FX.tipIntroMs`, `FX.tipAnnouncements`. The Ring's radius is forecast hop by hop (`Game.radiusIn`). |
+| P7-06 | "More games" ignores taps for the same 0.7 s as Play again, so a finger on the draft tray at capture can't leave the game. Score posts use `keepalive`, so leaving through a link doesn't lose a post in flight. The site address is fixed at build time (`VITE_GTX_SITE`, default `https://gametronyx.com`). Under 370 px wide, the top bar drops the playtest label to fit the link. | `src/finale.ts`, `src/gtx.ts`, `src/style.css`. |
+| P7-22 | For U46: the start tip shows for 4 s after a run is ready (the message line below still says how to start), then fades; after the first placement "TAP HIM TO TURN BACK" shows for 3 s (was 6). Both sit centred just inside the top of the Ring and fade over their last half second; the ring around him stays. The danger flash is unchanged (a callout above him). | `FX.tipStartMs`, `FX.tipIntroMs` in `src/main.ts`. |
+| P7-07 | No `Settings`/`DEFAULTS` key changed, so the ranked settings stay the same for the new season. The build label is `P1-playtest-7`, so this device's board starts fresh. | `src/stats.ts`. |
+
+### Rounds trial (U43, U44): agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P7-08 | Mode is chosen in Tune ("Classic · ranked" / "Rounds · trial, not ranked") or with `?mode=rounds` (`&set=custom` plays the designer's set). It lives outside `Settings`, so ranked settings never change. Rounds runs are never posted; their reports carry `mode: 'rounds'`. | Keeps the live leaderboard untouched. `isRankedReport` in `src/leaderboard.ts`. |
+| P7-09 | Built-in set: Round 1 goal 20, 100 s, 450 ms hops, x2 only; Round 2 goal 40, 90 s, 420 ms, adds freeze; Round 3 goal 60, 80 s, 390 ms; Midnight finale, no goal, 60 s, 360 ms. Each round keeps Classic's three Ring phases; its value weights shift toward 5s and 10s round by round. | Starting values to tune in the designer. `BUILTIN_ROUNDS` in `src/rounds.ts`. |
+| P7-10 | When a round clears, the Ring holds at full size for 2 s under a "ROUND n · GOAL g" banner. Points past the goal don't carry over. Road, draft, visits, the hop in flight, an active x2 or freeze, and powerups on the board (if the new round has them) carry over. The node set is dealt fresh (U43), with the round's opening 5s. The Ring jumping away is not counted as a close escape. | `Game.clearRound`, `TUNING.roundHoldMs`. |
+| P7-11 | In Rounds, one spawner places powerups: first at `firstMs` into the round, then an attempt every `everyMs`, picking by weight among the round's kinds that are neither on the board nor active, at most `max` (2) on the board. Classic keeps its separate x2 and freeze timers unchanged. | `Spawner` in `src/rounds.ts`; the golden replay guards Classic. |
+| P7-12 | Rounds end screen: "Round n of N" or "<name> · final round", a note that the trial isn't on the leaderboard, and a device board of this set's Rounds runs ("Your best Rounds runs · this device") so there is still a best to beat. | `src/main.ts` `finishRun`, `localBoard(…, roundSet)`. |
+| P7-13 | The designer (`designer.html`) edits every round number: goal, Ring length, hop, nodes, opening 5s, each phase's share, pace and point-value weights, and the powerups (spawner timing, weights, x2 length and speed, freeze length). Play saves the set on this device and opens `index.html?mode=rounds&set=custom`. Export/Import JSON and a share link (`designer.html#set=…`) move sets between devices. Everything is validated by `parseRoundSet`; the last round never has a goal. | A page in the game, as Tyler chose (U44). Moving sets into Gametronyx admin can come later. |
+
+### New powerups (U45): agent calls for review
+
+| ID | Starting call | Why / where to change |
+| --- | --- | --- |
+| P7-14 | New powerups appear only in Rounds, through the round's spawner, and only where the round has both a spawner weight and the powerup's settings. Built-in unlocks: round 1 x2; round 2 adds freeze and cherries; round 3 adds sweep and magnet; Midnight adds speed and expand. A round's banner and announcement name what it unlocks ("NEW · SWEEP · MAGNET"). | Learn one or two at a time rather than seven at once. `BUILTIN_ROUNDS`, `unlockedKinds`. |
+| P7-15 | Expand pushes the Ring out 1.5 cells (never past full) by rewinding the round's Ring clock, so the phase, runway cap and piece sizes all relax together and the phase can drop back. It isn't counted as a close escape. | `roundMsForRadius` in `src/rounds.ts`. Runs record `expands` and `ringRewoundSeconds`. |
+| P7-16 | Sweep collects every node holding the lowest value on the board, each as a collected node, doubled during x2, and can clear the round. | Stays useful when 1s are rare. |
+| P7-17 | Magnet lasts 6 s of live time (a freeze pauses it): on each landing he also collects every node within 2 cells (Euclidean), shown by a faint pink ring around him. | `Round.magnet`. |
+| P7-18 | Speed makes hops 1.8× faster for 5 s with no points bonus. With x2 as well, the faster multiplier wins (they don't multiply to 2.5×, which would make the route unreadable). A freeze pauses it. | `Round.speed`, `Game.hopSpeed`. |
+| P7-19 | Cherries count across the run; every 2 pays 10 bonus points (not doubled), which count toward the round's goal. A cherry counter sits in the board's top-right corner. | `Round.cherry`. |
+| P7-20 | Look: each powerup has a colour and a glyph: x2 violet "x2", freeze blue ❄, expand an orange ring with ↔ (it pushes the Ring), sweep white ✦, magnet pink U, speed lime », cherries drawn as cherries. Magnet and speed timers sit in the board's top-left corner. | `POWER_LOOK` in `src/main.ts`. Identity never rests on colour alone. |
+| P7-21 | Powerups on the board are one map keyed by cell (`Game.powerNodes`); `boostNode` and `freezeNode` remain as accessors. Classic's timers and random draw order are unchanged (the golden replay passes). | `src/game.ts`. |
+
+Ranking Rounds later would need the leaderboard server (gametronyx repo) to accept and check new fields: mode, rounds cleared and each round's Ring time; expands and rewound Ring time; cherry sets; nodes collected by sweep or magnet (they aren't landings, so "nodes ≤ hops" no longer holds). Custom sets can never rank. Then a new season.

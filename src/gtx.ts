@@ -81,7 +81,7 @@ export function scoreRun(report:RunReport,buildSha:string):ScoreRun{
 export async function submitScore(fetchFn:Fetch,api:string,token:string,run:ScoreRun,timeoutMs=SCORE_TIMEOUT_MS):Promise<ScoreResult>{
   try{
     const signal=typeof AbortSignal!=='undefined'&&'timeout' in AbortSignal?AbortSignal.timeout(timeoutMs):undefined;
-    const r=await fetchFn(`${api}/api/leaderboards/${GAME_SLUG}/scores`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(run),signal});
+    const r=await fetchFn(`${api}/api/leaderboards/${GAME_SLUG}/scores`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(run),signal,keepalive:true});
     if(r.status===401||r.status===403)return{ok:false,reason:'expired'};
     if(r.status===429)return{ok:false,reason:'limited'};
     if(r.status===404)return{ok:false,reason:'unavailable'};
