@@ -412,16 +412,19 @@ function drawReverseTip(now:number,p:Cell,ringTop:number){
   const danger=game.running&&dangerIndex>=2&&!game.reverseQueued;
   const shown=!game.running?now-readyAt:now-firstPlacedAt,span=!game.running?FX.tipStartMs:FX.tipIntroMs;
   const intro=!danger&&shown<span&&!game.reversals;
-  const label=danger?'TAP HIM TO TURN BACK!':!intro?'':game.running?'TAP HIM TO TURN BACK':'ONCE HE’S MOVING, TAP HIM TO TURN HIM BACK';
+  // Worded as an option, not a command (DECISIONS U47).
+  const label=danger?'YOU CAN TAP HIM TO TURN HIM BACK!':!intro?'':game.running?'YOU CAN TAP HIM TO TURN HIM BACK':'ONCE HE’S MOVING, YOU CAN TAP HIM TO TURN HIM BACK';
   if(!label)return;
   const tint=danger?color.red:color.route,pulse=.5+.5*Math.sin(now/(danger?90:180));
   // The start tips fade over their last half second.
   ctx.save();ctx.globalAlpha=danger?1:Math.min(1,(span-shown)/500);
   ctx.save();ctx.globalAlpha*=.55+.45*pulse;ctx.strokeStyle=tint;ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,14+5*pulse,0,Math.PI*2);ctx.stroke();ctx.restore();
-  ctx.font=`600 11px system-ui, sans-serif`;const w=ctx.measureText(label).width+16,h=20;
+  // Shrink the text to fit the board if a phone's font runs wide.
+  ctx.font=`600 11px system-ui, sans-serif`;const size=Math.max(8,Math.min(11,11*(BOARD_SIZE-24)/ctx.measureText(label).width));
+  ctx.font=`600 ${size}px system-ui, sans-serif`;const w=ctx.measureText(label).width+16,h=20;
   const x=Math.max(BOARD_X+4+w/2,Math.min(BOARD_X+BOARD_SIZE-4-w/2,danger?p.x:195));
   const y=danger?(p.y-36<BOARD_Y+h?p.y+34:p.y-36):Math.max(BOARD_Y+h,ringTop+24);
-  roundRect(x-w/2,y-h/2,w,h,h/2,'#0b141c99',tint);text(label,x,y+.5,11,danger?color.red:color.ink,'center');
+  roundRect(x-w/2,y-h/2,w,h,h/2,'#0b141c99',tint);text(label,x,y+.5,size,danger?color.red:color.ink,'center');
   ctx.restore();
 }
 function frame(now:number){
@@ -431,7 +434,7 @@ function frame(now:number){
     // Look a few hops down his forecast route; index 1 is the hop in flight, which a reverse can no longer change.
     const left=game.hop?game.hop.duration-game.hop.elapsed:0,each=game.hop?.duration??game.round.hopMs;
     const i=routeCrossesRing(route,(game.settings.grid-1)/2,j=>game.radiusIn(left+(j-1)*each),game.settings.hitRadius);
-    if(i>=2&&dangerIndex<2&&!game.reverseQueued&&dangerAnnounced<FX.tipAnnouncements){dangerAnnounced++;announce('Heading for the Ring · tap him to turn back.',color.red);}
+    if(i>=2&&dangerIndex<2&&!game.reverseQueued&&dangerAnnounced<FX.tipAnnouncements){dangerAnnounced++;announce('Heading for the Ring · you can tap him to turn him back.',color.red);}
     dangerIndex=i;
   }
   if(game.over&&!lastOver){gesture=undefined;announce(`The Ring caught the jerboa. ${game.score} points.`,color.red);lastOver=true;checkpoint('caught');if(historyDialog.open)showRuns();

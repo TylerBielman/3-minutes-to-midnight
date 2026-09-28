@@ -236,6 +236,7 @@ Source: Tyler's issues #7 (reverse tip), #8 (x2 + freeze), #9 (new powerups), #1
 | U43 | Rounds, as an unranked trial mode (Classic stays ranked): each round has its own points goal counted from 0 (20, 40, …). Scoring it clears the round at once: the Ring resets to full, the next round is faster, and the point nodes are replaced with the new round's set. Missing it, the Ring catches him. The last round is a Midnight finale with no goal. |
 | U44 | The round design tool is a page in this game (`designer.html`). |
 | U46 | (Playtest 7 feedback: moving node and double bonus good.) The first "tap him" tip shows for less time and sits near the top of the Ring, so it doesn't cover where the first pieces go. Supersedes the start-tip timing and position in P7-05. |
+| U47 | The reverse tips read as an option, not a command: "Once he's moving, you can tap him to turn him back", "You can tap him to turn him back", and in the danger flash "You can tap him to turn him back!". Supersedes the tip wording in P7-05 and P7-22. |
 | U45 | New powerups after Rounds, unlocked by round through one spawner: Magnet (he collects points near him), Speed (its own powerup, no scoring bonus), Cherries (a set pays bonus points), Sweep (collects the lowest value on the board), Expand (pushes the Ring out a fixed distance; it may return to an earlier phase). |
 
 ### Agent calls for review
