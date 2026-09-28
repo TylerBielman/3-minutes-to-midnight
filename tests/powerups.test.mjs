@@ -70,10 +70,12 @@ test('the spawner places the new kinds by weight, one of each, never while its e
   const n=powerGame(none);n.advance(3000);assert.equal(n.powerNodes.size,0,'a kind without its settings never spawns');
   assert.deepEqual(unlockedKinds(all.round),POWER_KINDS);
 });
-test('a round without a kind takes it off the board when it starts; settings from outside are clamped',()=>{
-  const s=parseRoundSet({rounds:[round({goal:3,spawner:{firstMs:99999,everyMs:99999,max:2,weights:{magnet:1,sweep:1}}}),round({goal:null,spawner:{firstMs:99999,everyMs:99999,max:2,weights:{sweep:1}}})]});
-  const g=powerGame(s);g.powerNodes.set('5,5','magnet');g.powerNodes.set('6,6','sweep');g.nodes.set('10,9',3);hop(g);
-  assert.equal(g.roundIndex,1);assert.deepEqual([...g.powerNodes.values()],['sweep']);
+test('a clear takes every powerup off the board, the next round spawns only its own kinds; settings from outside are clamped',()=>{
+  const s=parseRoundSet({rounds:[round({goal:3,spawner:{firstMs:99999,everyMs:99999,max:2,weights:{magnet:1,sweep:1}}}),round({goal:null,spawner:{firstMs:500,everyMs:500,max:2,weights:{sweep:1}}})]});
+  const g=powerGame(s);g.powerNodes.set('9,7','magnet');g.powerNodes.set('9,11','sweep');g.nodes.set('10,9',3);hop(g);
+  assert.equal(g.roundIndex,1);assert.equal(g.powerNodes.size,0);
+  g.draft[0]={shapeId:'Dot',turns:0};g.place(0,{x:10,y:9});g.advance(400);assert.equal(g.powerNodes.size,0,'its timer counts from the placement');
+  g.advance(200);assert.deepEqual([...g.powerNodes.values()],['sweep']);
   const c=parseRoundSet({rounds:[round({goal:null,expand:{cells:99},magnet:{ms:1,range:9},speed:{speed:9},cherry:{set:0,bonus:1e6}})]}).rounds[0];
   assert.deepEqual([c.expand.cells,c.magnet.ms,c.magnet.range,c.speed.speed,c.cherry.set,c.cherry.bonus],[5,500,4,3,1,100]);
 });

@@ -8,7 +8,7 @@ Tyler authorized the agent to make routine calls, document them in the decision 
 ## Active scope
 Portrait phone, hidden grid, fixed connected polyomino runway, draft-only rotation and rerolls, autonomous exploration/patrol, visible future route, tap-to-reverse with reverse tips, random point nodes (phase-weighted 1–5 plus a rare moving 10), x2 and freeze powerup nodes (freeze stops time), three-phase pulsing Ring, score on capture, end-of-run celebration and leaderboard, links back to gametronyx.com. Native Pointer Events share mouse and touch behavior.
 
-Approved next (Playtest 7 plan, DECISIONS U43–U45): a Rounds mode as an unranked trial with a design page, then new powerups unlocked by round. Classic stays the ranked mode.
+Approved next (Playtest 7 plan, DECISIONS U43–U45): a Rounds mode as an unranked trial with a design page, then new powerups unlocked by round. Clearing a round is a full reset, like a new level (U48). Classic stays the ranked mode.
 
 ## Guardrails
 - No overlap; every new piece connects. Every shared edge is traversable.
