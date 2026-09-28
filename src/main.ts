@@ -1,4 +1,4 @@
-import {Game,DEFAULTS,TUNING,ringBeats,type Settings} from './game.js';
+import {Game,DEFAULTS,TUNING,type Settings} from './game.js';
 import {cell,key,placementError,type Cell} from './runway.js';
 import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
 import {readHistory,saveReport,runReport,exportHistory,BUILD as RUN_BUILD,type Outcome,type RunReport} from './stats.js';
@@ -227,17 +227,17 @@ function draw(now:number){
   // The end screen covers the finished run, so its HUD is not drawn underneath.
   if(!game.over){
     text(String(game.score)+' PTS',10,36,23);
-    const seconds=Math.max(0,Math.ceil((game.settings.duration*1000-game.ringMs)/1000));
+    const seconds=Math.ceil(game.ringLeftMs/1000);
     text(`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,380,36,23,game.frozen?color.freeze:color.ink,'right');
     if(game.frozen){
-      const left=(game.freezeUntil-game.elapsed)/game.settings.freezeMs;
+      const left=(game.freezeUntil-game.elapsed)/(game.round.freeze?.ms||1);
       text(`❄ ${((game.freezeUntil-game.elapsed)/1000).toFixed(1)}s`,380,57,10,color.freeze,'right');roundRect(318-60*left,54,60*left,5,2.5,color.freeze);
     }
     // x2 during a freeze: the x2 countdown waits too (DECISIONS U40).
     if(game.doubleBonus)text('DOUBLE BONUS',195,39,11+Math.sin(now/140),color.boost,'center');
     else text(game.running?`PHASE ${game.phase} / 3`:'READY',195,39,11,color.muted,'center');
     if(game.boosted){
-      const left=game.boostLeft/game.settings.boostMs;
+      const left=game.boostLeft/(game.round.boost?.ms||1);
       text(`x2 ${game.frozen?'❄':'·'} ${(game.boostLeft/1000).toFixed(1)}s`,10,57,10,color.boost);roundRect(62,54,60*left,5,2.5,color.boost);
     }
     text(`${game.board.size}${game.roadLimit?` / ${game.roadLimit}`:''} SQUARES${game.roadLimit&&game.board.size>game.roadLimit?' · PROTECTED':''}`,195,56,9,game.roadLimit&&game.roadLimit<game.settings.roadLimit?color.ring:color.muted,'center');
@@ -281,7 +281,7 @@ function draw(now:number){
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
   // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
-  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen?Math.pow(1-(ringBeats(game.ringMs,game.settings)%1),2.2):0;
+  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen?Math.pow(1-(game.beats%1),2.2):0;
   // Frozen: steady blue ring that blinks during its last FX.thawWarnMs.
   const thawing=game.frozen&&game.freezeUntil-game.elapsed<FX.thawWarnMs&&Math.floor(now/150)%2===0;
   const ringColor=game.frozen&&!thawing?color.freeze:color.ring;
@@ -347,7 +347,7 @@ function frame(now:number){
   if(game.reversals&&!tipCounted){tipCounted=true;noteReversal(gtxStore,runId);}
   if(reverseTips&&game.running){
     // Look a few hops down his forecast route; index 1 is the hop in flight, which a reverse can no longer change.
-    const left=game.hop?game.hop.duration-game.hop.elapsed:0,each=game.hop?.duration??game.settings.hopMs;
+    const left=game.hop?game.hop.duration-game.hop.elapsed:0,each=game.hop?.duration??game.round.hopMs;
     const i=routeCrossesRing(route,(game.settings.grid-1)/2,j=>game.radiusIn(left+(j-1)*each),game.settings.hitRadius);
     if(i>=2&&dangerIndex<2&&!game.reverseQueued&&dangerAnnounced<FX.tipAnnouncements){dangerAnnounced++;announce('Heading for the Ring · tap him to turn back.',color.red);}
     dangerIndex=i;
@@ -359,8 +359,8 @@ function frame(now:number){
   if(game.running&&game.phase!==lastPhase){lastPhase=game.phase;phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}
   for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
     lastPickupSeq=pick.seq;
-    if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${game.settings.freezeMs/1000}s`,color.freeze);}
-    else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${game.settings.boostMs/1000}s`,color.boost);}
+    if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${(game.round.freeze?.ms??0)/1000}s`,color.freeze);}
+    else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${(game.round.boost?.ms??0)/1000}s`,color.boost);}
     else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
   }
   // After the pickups, so this announcement wins when the freeze or x2 that starts it was just collected.

@@ -6,6 +6,7 @@
 - `src/game.ts`: pure simulation, settings/tuning, three draft slots, mutable board/visit sets and ordered placed-piece records, point nodes, selected/in-flight hops, future route forecast, score and Ring lifecycle.
 - `src/main.ts`: native Pointer Events input, Canvas 2D renderer, responsive portrait layout, route arrows/color, legality ghosts, announcements, results, Tune panel and restart.
 - `src/input.ts`: pure direction/threshold classification for tap, drag and downward discard.
+- `src/rounds.ts`: round configs: a round's Ring length, phases (share, speed, pulse, node value weights), hop speed, node count, opening 5s and powerup timers; the Ring radius/phase/beat functions per round; `parseRoundSet` clamps sets from outside (pure, dependency-free). Classic is one round with no goal, built from `Settings` + `TUNING` (`classicSet` in `src/game.ts`), so Tune and URL overrides still apply. `Game` reads everything per-round through `game.round`.
 - `src/tips.ts`: reverse tips: whether they still show on this device, counting runs with a reversal, and where his forecast route meets the Ring (pure).
 - `src/stats.ts`: versioned run reports, bounded local history, storage-failure handling and JSON export.
 - `src/gtx.ts`: Gametronyx launch handoff, feedback, and posting scores with a retry queue (pure; fetch and storage are passed in).
@@ -125,6 +126,10 @@ The server is the Gametronyx leaderboard server: gametronyx repo, `server/`, at 
   - ranks only runs whose settings match the season's ranked settings (any seed);
   - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes. Playtest 7's 10s are worth 20 with x2, so the score cap must rise to 20 × nodes before Playtest 7 reaches main (DECISIONS U42).
 - **When Jerboa's defaults change** (a new playtest's tuning), the leaderboard needs a new season with the new ranked settings, or new runs are refused as not ranked. See gametronyx `docs/LAUNCH_CHECKLIST.md` Part H.
+
+## Golden replay
+
+`tests/replay.test.mjs` plays whole Classic runs with a deterministic bot through the public API and compares counters, clocks, board, nodes and an event-log hash with `tests/golden/replay-v1.json`. Refactors must pass it unchanged; after an intended gameplay change, rewrite it with `UPDATE_GOLDEN=1 npm test` and say why in the commit.
 
 ## Build, tests and package
 

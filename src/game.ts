@@ -1,11 +1,12 @@
 import {SHAPES,key,cell,same,neighbors,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
+import {NODE_VALUES,roundPhaseAt,roundRadius,roundBeats,pickValue,phaseWeights,type Round,type RoundSet} from './rounds.js';
 export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number,slots:number};
 export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:10,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000,slots:2};
 export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phases: share of the run and speed relative to the average needed to close on time.
   // Sum of fraction×speed must be 1 so the Ring closes exactly at the time limit. 180 s run → 60 / 80 / 40 s.
   phaseFractions:[1/3,4/9,2/9],phaseSpeeds:[.5,.875,2],nodeRadius:.32,previewLimit:64,simulationStep:16,
   // Point values 1-5, plus a rare 10 that moves. Relative weights per Ring phase; later phases shift toward 5s and 10s.
-  nodeValues:[1,2,3,4,5,10],phaseValueWeights:[[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]],startingFives:2,
+  nodeValues:NODE_VALUES,phaseValueWeights:[[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]],startingFives:2,
   // Moving node (the 10): steps to a neighbouring cell every stepMs ± jitterMs of unfrozen time, within `range` cells
   // (Chebyshev) of where it spawned. It wobbles for wobbleMs before a step and slides for slideMs (presentation).
   mover:{value:10,stepMs:2000,jitterMs:400,wobbleMs:500,slideMs:180,range:1},
@@ -26,31 +27,23 @@ export type Draft={shapeId:string,turns:number};
 /** A moving node's bookkeeping. Times are on the live clock (`Game.liveMs`), so movers stop while frozen. */
 export type Mover={home:Cell,nextMoveAt:number,from:Cell|null,movedAt:number};
 type Hop={from:Cell,to:Cell,elapsed:number,duration:number};
-const phaseMs=(settings:Settings)=>TUNING.phaseFractions.map(f=>f*settings.duration*1000);
-export function phaseAt(ringMs:number,settings:Settings):number {
-  let end=0;const lengths=phaseMs(settings);
-  for(let i=0;i<lengths.length;i++){end+=lengths[i];if(ringMs<end)return i+1;}
-  return lengths.length;
+/** Classic is one round with no goal, built from the (clamped) settings and TUNING. Tune and URL overrides land here. */
+export function classicRound(s:Settings):Round{
+  return {name:'Classic',goal:null,duration:s.duration,
+    phases:TUNING.phaseFractions.map((fraction,i)=>({fraction,speed:TUNING.phaseSpeeds[i],pulseMs:TUNING.ringPulseMs[i],weights:TUNING.phaseValueWeights[i]})),
+    hopMs:s.hopMs,nodeCount:s.nodeCount,openingFives:TUNING.startingFives,
+    boost:{firstMs:TUNING.boostFirstMs,respawnMs:TUNING.boostRespawnMs,ms:s.boostMs,speed:s.boostSpeed},
+    freeze:{firstMs:TUNING.freezeFirstMs,respawnMs:TUNING.freezeRespawnMs,ms:s.freezeMs}};
 }
-export function ringRadius(elapsedMs:number,settings:Settings):number {
-  const initial=settings.grid/2-.25,lengths=phaseMs(settings);
-  let remaining=Math.max(0,elapsedMs),distance=0;
-  TUNING.phaseSpeeds.forEach((speed,i)=>{const time=Math.min(lengths[i],remaining);distance+=initial/(settings.duration*1000)*speed*time;remaining-=time;});
-  return Math.max(0,initial-distance);
-}
+export const classicSet=(s:Settings):RoundSet=>({v:1,id:'classic',name:'Classic',rounds:[classicRound(s)]});
+// Classic helpers, kept for callers that only have settings.
+export const phaseAt=(ringMs:number,settings:Settings)=>roundPhaseAt(ringMs,classicRound(settings));
+export const ringRadius=(elapsedMs:number,settings:Settings)=>roundRadius(elapsedMs,settings.grid,classicRound(settings));
 /** Longest side of a shape in any rotation, in cells. */
 export const shapeLength=(id:string)=>{const cells=SHAPES.find(s=>s.id===id)!.cells;return Math.max(...cells.map(p=>p.x),...cells.map(p=>p.y))+1;};
 /** Continuous heartbeat count; the fractional part is the position within the current beat. */
-export function ringBeats(elapsedMs:number,settings:Settings):number {
-  const lengths=phaseMs(settings);let remaining=Math.max(0,elapsedMs),beats=0;
-  TUNING.ringPulseMs.forEach((period,i)=>{const time=Math.min(lengths[i],remaining);beats+=time/period;remaining-=time;});
-  return beats;
-}
-export function nodeValue(phase:number,roll:number):number {
-  const weights=TUNING.phaseValueWeights[Math.max(1,Math.min(3,phase))-1],total=weights.reduce((a,b)=>a+b,0);
-  let pick=roll*total;for(let i=0;i<weights.length;i++){pick-=weights[i];if(pick<0)return TUNING.nodeValues[i];}
-  return TUNING.nodeValues[TUNING.nodeValues.length-1];
-}
+export const ringBeats=(elapsedMs:number,settings:Settings)=>roundBeats(elapsedMs,classicRound(settings));
+export const nodeValue=(phase:number,roll:number)=>pickValue(TUNING.phaseValueWeights[Math.max(1,Math.min(3,phase))-1],roll);
 /** Cells a moving node can step to from `at`: the four neighbours (fixed N/E/S/W order) that stay on the board, within
  *  `range` cells of `home`, and pass `ok`. */
 export function moverSteps(at:Cell,home:Cell,range:number,grid:number,ok:(p:Cell)=>boolean):Cell[]{
@@ -65,11 +58,11 @@ export class Game {
   pieces:{cells:Cell[],shapeId:string}[]=[];lastRemoved:Cell[]=[];
   rotations=0;reversals=0;invalidDrops=0;hops=0;removedPieces=0;removedSquares=0;peakSquares=1;
   nearMisses=0;minClearance:number|null=null;private nearRing=false;
-  boostNode?:Cell;boosts=0;private nextBoostAt=TUNING.boostFirstMs;private startingFives=TUNING.startingFives;
+  boostNode?:Cell;boosts=0;private nextBoostAt:number;private startingFives:number;
   /** x2 ends when the live clock reaches this, so a freeze pauses the x2 countdown too. */
   private boostEndsAt=0;
   /** Ring clock: advances with play except while frozen. Drives radius, phase, pulse and the countdown. */
-  ringMs=0;freezeNode?:Cell;freezeUntil=0;freezes=0;private nextFreezeAt=TUNING.freezeFirstMs;
+  ringMs=0;freezeNode?:Cell;freezeUntil=0;freezes=0;private nextFreezeAt:number;
   /** Live clock: play time that a freeze stops (the x2 countdown, moving nodes). Unlike ringMs it is never reset. */
   liveMs=0;
   /** Moving nodes, keyed by their current cell (a subset of `nodes`). */
@@ -78,7 +71,10 @@ export class Game {
   events:{ms:number,type:string,data:unknown}[]=[];droppedEvents=0;
   record(type:string,data:unknown={}){if(this.events.length<5000)this.events.push({ms:Math.round(this.elapsed),type,data});else this.droppedEvents++;}
   private pieceRng:number;private nodeRng:number;private navRng:number;private moverRng:number;
-  constructor(settings:Partial<Settings>={}){
+  /** The rounds this run plays, and which one is in play. Classic unless a set is given. */
+  readonly set:RoundSet;roundIndex=0;
+  get round():Round{return this.set.rounds[this.roundIndex];}
+  constructor(settings:Partial<Settings>={},set?:RoundSet){
     this.settings={...DEFAULTS,...settings};
     const s=this.settings;
     s.grid=Math.max(9,Math.min(31,Math.round(s.grid)));if(s.grid%2===0)s.grid++;
@@ -90,6 +86,8 @@ export class Game {
     s.boostMs=Number.isFinite(s.boostMs)?Math.max(500,Math.min(30000,s.boostMs)):DEFAULTS.boostMs;
     s.freezeMs=Number.isFinite(s.freezeMs)?Math.max(500,Math.min(30000,s.freezeMs)):DEFAULTS.freezeMs;
     s.seed=s.seed>>>0;this.pieceRng=s.seed;this.nodeRng=s.seed^0xA9E3779B;this.navRng=s.seed^0x71B54A35;this.moverRng=s.seed^0x3C6EF372;
+    this.set=set??classicSet(s);
+    this.nextBoostAt=this.round.boost?.firstMs??Infinity;this.nextFreezeAt=this.round.freeze?.firstMs??Infinity;this.startingFives=this.round.openingFives;
     this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};
     this.board.add(key(this.at));this.visited.add(key(this.at));
     this.pieces.push({cells:[{...this.at}],shapeId:'Start'});
@@ -97,7 +95,7 @@ export class Game {
     this.draft=[];
     while(this.draft.length<s.slots){let d=this.draw();for(let i=0;i<50&&this.draft.some(o=>o.shapeId===d.shapeId);i++)d=this.draw();this.draft.push(d);}this.refillNodes();
   }
-  get radius(){return ringRadius(this.ringMs,this.settings);}
+  get radius(){return roundRadius(this.ringMs,this.settings.grid,this.round);}
   get frozen(){return this.elapsed<this.freezeUntil;}
   get boosted(){return this.liveMs<this.boostEndsAt;}
   /** x2 time left (ms); it stands still while frozen. */
@@ -105,15 +103,20 @@ export class Game {
   /** x2 and freeze together: double points while the Ring and the x2 countdown both wait. */
   get doubleBonus(){return this.boosted&&this.frozen;}
   /** The Ring's radius `ms` from now, allowing for the rest of any freeze. */
-  radiusIn(ms:number){return ringRadius(this.ringMs+Math.max(0,ms-Math.max(0,this.freezeUntil-this.elapsed)),this.settings);}
-  get phase(){return phaseAt(this.ringMs,this.settings);}
+  radiusIn(ms:number){return roundRadius(this.ringMs+Math.max(0,ms-Math.max(0,this.freezeUntil-this.elapsed)),this.settings.grid,this.round);}
+  get phase(){return roundPhaseAt(this.ringMs,this.round);}
+  /** Heartbeat count for the Ring's pulse (presentation). */
+  get beats(){return roundBeats(this.ringMs,this.round);}
+  /** Ring time left in this round (ms); the countdown. */
+  get ringLeftMs(){return Math.max(0,this.round.duration*1000-this.ringMs);}
   /** Pieces longer than the Ring is wide are not dealt. */
   get maxPieceLength(){return Math.max(1,Math.floor(this.radius*2));}
   /** Soft runway cap: the Tune setting, lowered in the endgame as the Ring's area shrinks. 0 = unlimited. */
   /** Point nodes kept on the board: the Tune count at full size, shrinking with the Ring's radius. */
   get nodeTarget(){
     const full=this.settings.grid/2-.25;
-    return Math.min(this.settings.nodeCount,Math.max(TUNING.minNodes,Math.ceil(this.settings.nodeCount*this.radius/full)));
+    const count=this.round.nodeCount;
+    return Math.min(count,Math.max(TUNING.minNodes,Math.ceil(count*this.radius/full)));
   }
   get roadLimit(){
     if(!this.settings.roadLimit)return 0;
@@ -173,7 +176,7 @@ export class Game {
   private beginHop(){
     const result=chooseNext(this.board,this.visited,this.at,this.previous,this.navRng,this.reverseQueued);
     this.navRng=result.rng;this.reverseQueued=false;
-    if(result.next)this.hop={from:{...this.at},to:result.next,elapsed:0,duration:this.boosted?this.settings.hopMs/this.settings.boostSpeed:this.settings.hopMs};
+    if(result.next)this.hop={from:{...this.at},to:result.next,elapsed:0,duration:this.boosted&&this.round.boost?this.round.hopMs/this.round.boost.speed:this.round.hopMs};
   }
   /** Preview consumes a copy of route RNG and visit memory. Rendering never rerolls a tie. */
   preview():Cell[]{
@@ -224,8 +227,8 @@ export class Game {
   private refillNodes(){
     const center=(this.settings.grid-1)/2;
     for(const k of this.nodes.keys()){const [x,y]=k.split(',').map(Number);if(Math.hypot(x-center,y-center)+TUNING.nodeRadius>=this.radius)this.dropNode(k);}
-    if(this.boostNode&&Math.hypot(this.boostNode.x-center,this.boostNode.y-center)+TUNING.nodeRadius>=this.radius){this.boostNode=undefined;this.nextBoostAt=this.elapsed+TUNING.boostRespawnMs;this.record('boost-lost');}
-    if(this.freezeNode&&Math.hypot(this.freezeNode.x-center,this.freezeNode.y-center)+TUNING.nodeRadius>=this.radius){this.freezeNode=undefined;this.nextFreezeAt=this.elapsed+TUNING.freezeRespawnMs;this.record('freeze-lost');}
+    if(this.boostNode&&Math.hypot(this.boostNode.x-center,this.boostNode.y-center)+TUNING.nodeRadius>=this.radius){this.boostNode=undefined;this.nextBoostAt=this.elapsed+(this.round.boost?.respawnMs??0);this.record('boost-lost');}
+    if(this.freezeNode&&Math.hypot(this.freezeNode.x-center,this.freezeNode.y-center)+TUNING.nodeRadius>=this.radius){this.freezeNode=undefined;this.nextFreezeAt=this.elapsed+(this.round.freeze?.respawnMs??0);this.record('freeze-lost');}
     const eligible:Cell[]=[];
     for(let y=0;y<this.settings.grid;y++)for(let x=0;x<this.settings.grid;x++){
       const p={x,y},k=key(p);
@@ -237,16 +240,16 @@ export class Game {
       let r=randomStep(this.nodeRng);this.nodeRng=r.state;const [p]=eligible.splice(Math.floor(r.value*eligible.length),1);
       r=randomStep(this.nodeRng);this.nodeRng=r.state;
       // The opening board guarantees a couple of 5s to pull the player outward.
-      const value=this.startingFives>0?5:nodeValue(this.phase,r.value);if(this.startingFives>0)this.startingFives--;
+      const value=this.startingFives>0?5:pickValue(phaseWeights(this.round,this.phase),r.value);if(this.startingFives>0)this.startingFives--;
       this.addNode(p,value);
     }
     const center2=(this.settings.grid-1)/2;
     const powerupCells=()=>eligible.filter(p=>Math.hypot(p.x-center2,p.y-center2)+TUNING.nodeRadius<this.radius-TUNING.powerupRingMargin);
     let safe=powerupCells();
-    if(!this.boostNode&&!this.boosted&&this.running&&this.elapsed>=this.nextBoostAt&&safe.length){
+    if(this.round.boost&&!this.boostNode&&!this.boosted&&this.running&&this.elapsed>=this.nextBoostAt&&safe.length){
       const r=randomStep(this.nodeRng);this.nodeRng=r.state;[this.boostNode]=safe.splice(Math.floor(r.value*safe.length),1);this.record('boost-spawn',{at:this.boostNode});
     }
-    if(!this.freezeNode&&!this.frozen&&this.running&&this.elapsed>=this.nextFreezeAt&&safe.length){
+    if(this.round.freeze&&!this.freezeNode&&!this.frozen&&this.running&&this.elapsed>=this.nextFreezeAt&&safe.length){
       const r=randomStep(this.nodeRng);this.nodeRng=r.state;[this.freezeNode]=safe.splice(Math.floor(r.value*safe.length),1);this.record('freeze-spawn',{at:this.freezeNode});
     }
   }
@@ -266,11 +269,11 @@ export class Game {
       if(this.hop&&this.hop.elapsed>=this.hop.duration){
         this.previous=this.hop.from;this.at=this.hop.to;this.hop=undefined;this.visited.add(key(this.at));this.hops++;this.record('hop',{at:this.at});
         if(this.boostNode&&same(this.boostNode,this.at)){
-          this.boostNode=undefined;this.boostEndsAt=this.liveMs+this.settings.boostMs;this.nextBoostAt=this.elapsed+TUNING.boostRespawnMs;this.boosts++;
+          this.boostNode=undefined;this.boostEndsAt=this.liveMs+(this.round.boost?.ms??0);this.nextBoostAt=this.elapsed+(this.round.boost?.respawnMs??0);this.boosts++;
           this.record('boost',{at:this.at});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'boost',boosted:true});
         }
         if(this.freezeNode&&same(this.freezeNode,this.at)){
-          this.freezeNode=undefined;this.freezeUntil=this.elapsed+this.settings.freezeMs;this.nextFreezeAt=this.elapsed+TUNING.freezeRespawnMs;this.freezes++;
+          this.freezeNode=undefined;this.freezeUntil=this.elapsed+(this.round.freeze?.ms??0);this.nextFreezeAt=this.elapsed+(this.round.freeze?.respawnMs??0);this.freezes++;
           this.record('freeze',{at:this.at});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'freeze',boosted:this.boosted});
         }
         const value=this.nodes.get(key(this.at));
