@@ -21,9 +21,7 @@ export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phase
   // Endgame: the runway cap shrinks with the Ring's area (cells) so old road clears faster late in the run.
   endgameRoadDensity:.3,minRoadLimit:6,
   // Point-node target shrinks in proportion to the Ring's radius, never below this.
-  minNodes:2,
-  // Rounds: after a round clears, the Ring holds at full size this long while the banner shows.
-  roundHoldMs:2000};
+  minNodes:2};
 /** For the renderer: a point collected (`via` a sweep or magnet when not by landing), a powerup used, or a round cleared. */
 export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'round'|PowerKind,boosted:boolean,via?:'sweep'|'magnet'};
 export type RoundResult={round:number,goal:number,score:number,atMs:number,ringMs:number};
@@ -56,10 +54,12 @@ export function moverSteps(at:Cell,home:Cell,range:number,grid:number,ok:(p:Cell
 export class Game {
   readonly settings:Settings;
   board=new Set<string>();visited=new Set<string>();nodes=new Map<string,number>();
-  draft:Draft[]=[];at:Cell;previous?:Cell;hop?:Hop;
+  draft:Draft[]=[];at:Cell={x:0,y:0};previous?:Cell;hop?:Hop;
   elapsed=0;running=false;over=false;score=0;collected=0;placements=0;discards=0;
   reverseQueued=false;revision=0;
-  pieces:{cells:Cell[],shapeId:string}[]=[];lastRemoved:Cell[]=[];
+  pieces:{cells:Cell[],shapeId:string}[]=[];
+  /** Cells taken off the board by the latest placement, or the whole old road when a round clears (they flash amber). */
+  lastRemoved:Cell[]=[];
   rotations=0;reversals=0;invalidDrops=0;hops=0;removedPieces=0;removedSquares=0;peakSquares=1;
   nearMisses=0;minClearance:number|null=null;private nearRing=false;
   /** Powerups on the board, keyed by cell. At most one of each kind. */
@@ -86,7 +86,7 @@ export class Game {
   roundScore=0;roundsCleared=0;roundLog:RoundResult[]=[];
   /** Ring time over the whole run (ringMs restarts each round). */
   ringTotalMs=0;
-  private ringHoldUntil=0;private nextPowerAt:number;private powerRng:number;
+  private nextPowerAt:number;private powerRng:number;
   get round():Round{return this.set.rounds[this.roundIndex];}
   constructor(settings:Partial<Settings>={},set?:RoundSet){
     this.settings={...DEFAULTS,...settings};
@@ -103,9 +103,15 @@ export class Game {
     this.set=set??classicSet(s);
     this.nextBoostAt=this.round.boost?.firstMs??Infinity;this.nextFreezeAt=this.round.freeze?.firstMs??Infinity;this.startingFives=this.round.openingFives;
     this.nextPowerAt=this.round.spawner?.firstMs??Infinity;
-    this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};
-    this.board.add(key(this.at));this.visited.add(key(this.at));
-    this.pieces.push({cells:[{...this.at}],shapeId:'Start'});
+    this.setUp();
+  }
+  /** A fresh board: one square at the centre with him on it, a new opening hand and the round's point nodes. The run
+   *  starts this way, and so does each round after a clear. */
+  private setUp(){
+    const s=this.settings;
+    this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};this.previous=undefined;this.hop=undefined;this.reverseQueued=false;
+    this.board=new Set([key(this.at)]);this.visited=new Set([key(this.at)]);
+    this.pieces=[{cells:[{...this.at}],shapeId:'Start'}];
     // The opening hand never repeats a shape; redraw (deterministically, same seed) until each slot differs.
     this.draft=[];
     while(this.draft.length<s.slots){let d=this.draw();for(let i=0;i<50&&this.draft.some(o=>o.shapeId===d.shapeId);i++)d=this.draw();this.draft.push(d);}this.refillNodes();
@@ -133,8 +139,6 @@ export class Game {
   get phase(){return roundPhaseAt(this.ringMs,this.round);}
   /** Points still needed this round, or null in a round without a goal. */
   get goal(){return this.round.goal;}
-  /** The Ring holds at full size for a moment after a round clears. */
-  get ringHeld(){return this.elapsed<this.ringHoldUntil;}
   /** Heartbeat count for the Ring's pulse (presentation). */
   get beats(){return roundBeats(this.ringMs,this.round);}
   /** Ring time left in this round (ms); the countdown. */
@@ -346,19 +350,26 @@ export class Game {
       this.record('cherry',{at,points});note(points);
     }
   }
-  /** The round's goal is reached: the Ring resets to full and holds briefly, the next round's numbers apply, and its
-   *  nodes are dealt fresh. Road, draft, visits, the hop in flight, active powerups and powerups on the board carry over. */
+  /** The round's goal is reached. Like a new level: the board clears (nodes left on it are not scored), powerups and
+   *  their effects end, and the next round starts on a fresh board with a full Ring, waiting for its first placement
+   *  (DECISIONS U48). The score, counters and round log carry on. */
   private clearRound(){
+    const at={...this.at};
     this.roundLog.push({round:this.roundIndex+1,goal:this.round.goal!,score:this.roundScore,atMs:Math.round(this.elapsed),ringMs:Math.round(this.ringMs)});
-    this.record('round-clear',{round:this.roundIndex+1,score:this.roundScore});
-    this.roundIndex++;this.roundsCleared++;this.roundScore=0;this.ringMs=0;this.ringHoldUntil=this.elapsed+TUNING.roundHoldMs;
+    this.record('round-clear',{round:this.roundIndex+1,score:this.roundScore,left:this.nodes.size});
+    this.roundIndex++;this.roundsCleared++;this.roundScore=0;this.ringMs=0;this.running=false;
     for(const k of [...this.nodes.keys()])this.dropNode(k);
-    for(const [k,kind] of [...this.powerNodes])if(!this.roundHas(kind))this.powerNodes.delete(k);
+    this.powerNodes.clear();this.boostEndsAt=0;this.freezeUntil=0;this.magnetEndsAt=0;this.speedEndsAt=0;this.cherries=0;
     // The Ring jumps away: that is not a close escape.
     this.startingFives=this.round.openingFives;this.nearRing=false;
+    // Powerup timers count from the new round's first placement (the clock waits until then).
     this.nextBoostAt=this.elapsed+(this.round.boost?.firstMs??0);this.nextFreezeAt=this.elapsed+(this.round.freeze?.firstMs??0);
     this.nextPowerAt=this.elapsed+(this.round.spawner?.firstMs??0);
-    this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'round',boosted:false});
+    const road=[...this.board].map(cell);
+    this.setUp();
+    this.lastRemoved=road.filter(p=>!this.board.has(key(p)));
+    this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at,points:0,kind:'round',boosted:false});
+    this.revision++;
   }
   advance(deltaMs:number){
     if(!this.running||this.over||!Number.isFinite(deltaMs)||deltaMs<=0)return;
@@ -366,7 +377,7 @@ export class Game {
     while(remaining>0&&!this.over){
       const dt=Math.min(remaining,TUNING.simulationStep,this.hop?this.hop.duration-this.hop.elapsed:Infinity);
       remaining-=dt;
-      if(!this.frozen){if(this.elapsed>=this.ringHoldUntil){this.ringMs+=dt;this.ringTotalMs+=dt;}this.liveMs+=dt;}
+      if(!this.frozen){this.ringMs+=dt;this.ringTotalMs+=dt;this.liveMs+=dt;}
       this.elapsed+=dt;if(this.hop)this.hop.elapsed+=dt;
       const p=this.position,center=(this.settings.grid-1)/2;
       // Ground footprint, not the decorative vertical hop. Check before awarding pickups.
@@ -382,8 +393,11 @@ export class Game {
         if(this.nodes.has(here))this.collect(here,'hop');
         // The magnet also collects every node within its range of where he lands.
         if(this.magnetActive&&this.round.magnet)for(const k of [...this.nodes.keys()]){const p=cell(k);if(Math.hypot(p.x-this.at.x,p.y-this.at.y)<=this.round.magnet.range)this.collect(k,'magnet');}
-        if(this.round.goal!==null&&this.roundScore>=this.round.goal&&this.roundIndex<this.set.rounds.length-1)this.clearRound();
+        const cleared=this.round.goal!==null&&this.roundScore>=this.round.goal&&this.roundIndex<this.set.rounds.length-1;
+        if(cleared)this.clearRound();
         if(this.pickups.length>40)this.pickups.splice(0,this.pickups.length-40);
+        // A cleared round waits, like the start of a run, for its first placement.
+        if(cleared)break;
         this.beginHop();this.revision++;
       }
       // After beginHop, so a mover knows the cell he is now committed to.

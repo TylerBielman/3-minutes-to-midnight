@@ -15,18 +15,27 @@ function roundsGame(set=testSet()){
 }
 const FULL=19/2-.25;
 
-test('scoring the goal clears the round at once: full Ring, next round, fresh nodes; the road and draft stay',()=>{
-  const g=roundsGame();g.ringMs=30000;g.ringTotalMs=30000;g.nodes.set('10,9',5);
-  const board=[...g.board].sort(),draft=JSON.stringify(g.draft);assert.ok(g.radius<FULL);
+test('scoring the goal clears the round like a new level: fresh board and hand, full Ring, waiting for a placement',()=>{
+  const g=roundsGame();g.ringMs=30000;g.ringTotalMs=30000;g.nodes.set('10,9',5);g.nodes.set('3,9',4);g.powerNodes.set('9,8','freeze');assert.ok(g.radius<FULL);
   g.advance(450);
-  assert.equal(g.roundIndex,1);assert.equal(g.roundsCleared,1);assert.equal(g.roundScore,0,'points past the goal don’t carry over');assert.equal(g.score,5);
+  assert.equal(g.roundIndex,1);assert.equal(g.roundsCleared,1);assert.equal(g.roundScore,0,'points past the goal don’t carry over');
+  assert.equal(g.score,5,'the 4 left on the board is not scored');assert.equal(g.collected,1);
   assert.deepEqual(g.roundLog,[{round:1,goal:3,score:5,atMs:450,ringMs:30450}]);
-  assert.equal(g.ringMs,0);assert.equal(g.radius,FULL);assert.equal(g.goal,5);assert.equal(g.ringHeld,true);
-  assert.equal(g.nodes.size,6,'the new round’s full set');assert.deepEqual([...g.board].sort(),board);assert.equal(JSON.stringify(g.draft),draft);
-  assert.ok(g.visited.has('10,9'));assert.equal(g.hop.duration,300,'the new hop speed starts with the next hop');
-  assert.equal(g.pickups.at(-1).kind,'round');assert.ok(g.events.some(e=>e.type==='round-clear'));
-  g.advance(1900);assert.equal(g.ringMs,0,'the Ring holds at full');g.advance(600);assert.ok(g.ringMs>0&&g.ringMs<=600);
-  assert.ok(Math.abs(g.ringTotalMs-(30450+g.ringMs))<1e-9,'Ring time adds up across rounds');
+  assert.equal(g.ringMs,0);assert.equal(g.radius,FULL);assert.equal(g.goal,5);
+  // The board is wiped back to the start square, with him on it and no hop, as at the start of a run.
+  assert.equal(g.running,false);assert.deepEqual([...g.board],['9,9']);assert.deepEqual([...g.visited],['9,9']);
+  assert.deepEqual(g.at,{x:9,y:9});assert.equal(g.hop,undefined);assert.equal(g.previous,undefined);assert.equal(g.pieces.length,1);
+  assert.deepEqual(g.lastRemoved.map(p=>`${p.x},${p.y}`).sort(),['10,9','11,9','12,9','13,9'],'the old road flashes out');
+  assert.equal(g.nodes.size,6,'the new round’s full set');assert.equal(g.powerNodes.size,0);
+  assert.equal(g.draft.length,2);assert.notEqual(g.draft[0].shapeId,g.draft[1].shapeId,'a fresh opening hand');assert.ok(g.draft.every(d=>d.turns===0));
+  assert.equal(g.pickups.at(-1).kind,'round');assert.deepEqual(g.pickups.at(-1).at,{x:10,y:9});
+  const clear=g.events.find(e=>e.type==='round-clear').data;assert.deepEqual([clear.round,clear.score],[1,5]);assert.ok(clear.left>=1,'nodes left behind');
+  // Nothing moves until the first placement, and discards wait for it too.
+  const nodes=JSON.stringify([...g.nodes]);g.advance(5000);
+  assert.deepEqual([g.elapsed,g.ringMs,g.ringTotalMs],[450,0,30450]);assert.equal(JSON.stringify([...g.nodes]),nodes);assert.equal(g.discard(0),false);
+  g.draft[0]={shapeId:'Dot',turns:0};assert.equal(g.place(0,{x:10,y:9}),undefined);assert.equal(g.running,true);
+  assert.equal(g.hop.duration,300,'the new round’s hop speed');assert.deepEqual(g.lastRemoved,[]);
+  g.advance(100);assert.ok(Math.abs(g.ringMs-100)<1e-9);assert.ok(Math.abs(g.ringTotalMs-30550)<1e-9,'Ring time adds up across rounds');
 });
 test('missing the goal ends the run on capture; the finale never clears',()=>{
   const g=roundsGame();g.ringMs=59000;g.advance(3000);assert.equal(g.over,true);assert.equal(g.roundIndex,0);assert.equal(g.roundsCleared,0);
@@ -35,13 +44,15 @@ test('missing the goal ends the run on capture; the finale never clears',()=>{
   const direct=new Game({seed:1},{v:1,id:'raw',name:'Raw',rounds:[round({goal:1})]});direct.board=new Set(['9,9','10,9']);direct.nodes.clear();direct.nodes.set('10,9',3);
   direct.draft[0]={shapeId:'Dot',turns:0};direct.place(0,{x:11,y:9});direct.advance(450);assert.equal(direct.roundIndex,0,'an unparsed set can’t clear past its last round');
 });
-test('a freeze carries over a clear, and the Ring jumping away is not a close escape',()=>{
-  const g=roundsGame();let ms=0;while(roundRadius(ms,19,g.round)>1.45)ms+=100;g.ringMs=ms;g.nodes.set('10,9',3);
-  g.freezeUntil=g.elapsed+5000;
+test('a clear ends every powerup and effect, and the Ring jumping away is not a close escape',()=>{
+  const g=roundsGame();let ms=0;while(roundRadius(ms,19,g.round)>1.45)ms+=100;g.ringMs=ms;
+  g.nodes.set('10,9',3);g.powerNodes.set('10,9','boost');g.powerNodes.set('9,8','freeze');g.freezeUntil=g.elapsed+5000;g.cherries=1;
   g.advance(440);assert.equal(g.nearMisses,0);
-  g.advance(10);assert.equal(g.roundIndex,1);assert.equal(g.frozen,true,'still frozen');
+  g.advance(10);assert.equal(g.roundIndex,1);assert.equal(g.score,6,'x2 doubled the last node');
+  assert.deepEqual([g.frozen,g.boosted,g.doubleBonus,g.powerNodes.size,g.cherries],[false,false,false,0,0]);
   assert.deepEqual(g.events.map(e=>e.type).filter(t=>t==='danger-enter'||t==='round-clear'),['danger-enter','round-clear'],'he was in danger when the round cleared');
-  g.advance(1000);assert.equal(g.nearMisses,0);assert.ok(!g.events.some(e=>e.type==='near-miss'));
+  g.draft[0]={shapeId:'Dot',turns:0};g.place(0,{x:10,y:9});g.advance(1000);
+  assert.equal(g.nearMisses,0);assert.ok(!g.events.some(e=>e.type==='near-miss'));assert.equal(g.hop.duration,300,'no x2 left over');
 });
 test('Rounds reports carry the mode and never rank; the device boards keep Classic and Rounds apart',()=>{
   const classic=new Game({seed:2}),rounds=new Game({seed:2},BUILTIN_ROUNDS),custom=new Game({seed:2},{...testSet(),id:'custom'});

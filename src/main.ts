@@ -179,7 +179,8 @@ function drawPower(kind:PowerKind,x:number,y:number,s:number,now:number){
 // tipStartMs: how long the start tip shows before the first placement; tipIntroMs: how long "tap him" shows after it
 // (Tyler, Playtest 7: shorter, and at the top of the Ring). tipAnnouncements: danger announcements per run.
 const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,roundSurgeMs:2800,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipStartMs:4000,tipIntroMs:3000,tipAnnouncements:3};
-const startMessage=()=>game.goal!==null?`Round 1: score ${game.goal} to clear it. Drag a piece up to start.`:'Tap a piece to rotate. Drag up to start.';
+const startMessage=()=>game.goal!==null?`Round ${game.roundIndex+1}: score ${game.goal} to clear it. Drag a piece up to start.`
+  :game.set.rounds.length>1?`${game.round.name}: no goal, score all you can. Drag a piece up to start.`:'Tap a piece to rotate. Drag up to start.';
 let message=roundsNote||startMessage(),messageColor=roundsNote?color.red:color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
@@ -331,7 +332,7 @@ function draw(now:number){
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
   // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
-  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen&&!game.ringHeld?Math.pow(1-(game.beats%1),2.2):0;
+  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen?Math.pow(1-(game.beats%1),2.2):0;
   // Frozen: steady blue ring that blinks during its last FX.thawWarnMs.
   const thawing=game.frozen&&game.freezeUntil-game.elapsed<FX.thawWarnMs&&Math.floor(now/150)%2===0;
   const ringColor=game.frozen&&!thawing?color.freeze:color.ring;
@@ -410,7 +411,8 @@ function draw(now:number){
 function drawReverseTip(now:number,p:Cell,ringTop:number){
   if(!reverseTips||game.over)return;
   const danger=game.running&&dangerIndex>=2&&!game.reverseQueued;
-  const shown=!game.running?now-readyAt:now-firstPlacedAt,span=!game.running?FX.tipStartMs:FX.tipIntroMs;
+  // The start tip is for the start of the run only, not a round waiting after a clear.
+  const shown=!game.running?(game.placements?Infinity:now-readyAt):now-firstPlacedAt,span=!game.running?FX.tipStartMs:FX.tipIntroMs;
   const intro=!danger&&shown<span&&!game.reversals;
   // Worded as an option, not a command (DECISIONS U47).
   const label=danger?'YOU CAN TAP HIM TO TURN HIM BACK!':!intro?'':game.running?'YOU CAN TAP HIM TO TURN HIM BACK':'ONCE HE’S MOVING, YOU CAN TAP HIM TO TURN HIM BACK';
@@ -446,13 +448,14 @@ function frame(now:number){
   for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
     lastPickupSeq=pick.seq;
     if(pick.kind==='round'){
-      roundSurgeAt=now;phaseSurgeAt=-Infinity;
+      // A new level (DECISIONS U48): the old road flashes out and the next round waits for its first placement.
+      roundSurgeAt=now;phaseSurgeAt=-Infinity;removedUntil=now+900;dangerIndex=-1;gesture=undefined;checkpoint();
       // Powerups this round unlocks (DECISIONS U45).
       const before=unlockedKinds(game.set.rounds[game.roundIndex-1]),fresh=unlockedKinds(game.round).filter(k=>!before.includes(k));
       roundNews=fresh.length===1?`${POWER_LOOK[fresh[0]].name.toUpperCase()} · ${POWER_LOOK[fresh[0]].about}`:fresh.map(k=>POWER_LOOK[k].name.toUpperCase()).join(' · ');
       const news=fresh.length?` New: ${fresh.map(k=>`${POWER_LOOK[k].name} (${POWER_LOOK[k].about})`).join(', ')}.`:'';
-      const head=game.goal===null?`Round ${game.roundIndex} clear! ${game.round.name}: no goal, score all you can.`:`Round ${game.roundIndex} clear! Round ${game.roundIndex+1}: score ${game.goal}.`;
-      announce(head+(game.goal===null?'':' The Ring speeds up.')+news,color.points,head+(fresh.length?` New: ${fresh.map(k=>POWER_LOOK[k].name).join(', ')}.`:''));
+      const next=game.goal===null?game.round.name:`round ${game.roundIndex+1}`;
+      announce(`Round ${game.roundIndex} clear! ${startMessage()}${news}`,color.points,`Round ${game.roundIndex} clear! Drag a piece up to start ${next}.`);
     }
     else if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${(game.round.freeze?.ms??0)/1000}s`,color.freeze);}
     else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${(game.round.boost?.ms??0)/1000}s`,color.boost);}
