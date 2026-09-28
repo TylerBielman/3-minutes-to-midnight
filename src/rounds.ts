@@ -139,20 +139,20 @@ export function parseRoundSet(raw:unknown):RoundSet|null{
   return {v:1,id:label(o.id,'custom').replace(/[^\w-]/g,'-'),name:label(o.name,'Custom rounds'),rounds};
 }
 
-// The built-in Rounds trial (DECISIONS U43, U45): goals 20 / 40 / 60, each round's Ring a little shorter and his hops a
-// little quicker, and a Midnight finale with no goal. Powerups unlock round by round: x2; then freeze and cherries; then
-// sweep and magnet; Midnight adds speed and expand. Starting values; tune in the designer.
+// The built-in Rounds trial (DECISIONS U43, U45), as Tyler tuned it in the designer (U49): goals 30 / 45 / 60, his hops a
+// little quicker each round, and a Midnight finale with no goal. Powerups unlock round by round: x2 and freeze; then
+// sweep; then magnet; Midnight adds cherries, speed and expand.
 const CLASSIC_SHAPE=[{fraction:1/3,speed:.5,pulseMs:1400},{fraction:4/9,speed:.875,pulseMs:900},{fraction:2/9,speed:2,pulseMs:550}];
 const shaped=(weights:number[][])=>CLASSIC_SHAPE.map((p,i)=>({...p,weights:weights[i]}));
 const EFFECTS={boost:{firstMs:0,respawnMs:0,ms:7000,speed:1.4},freeze:{firstMs:0,respawnMs:0,ms:6000},expand:{cells:1.5},
   magnet:{ms:6000,range:2},speed:{ms:5000,speed:1.8},cherry:{set:2,bonus:10}};
 export const BUILTIN_ROUNDS:RoundSet={v:1,id:'rounds',name:'Rounds',rounds:[
-  {name:'Round 1',goal:20,duration:100,hopMs:450,nodeCount:10,openingFives:2,...EFFECTS,
-    phases:shaped([[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]]),spawner:{firstMs:8000,everyMs:12000,max:2,weights:{boost:1}}},
-  {name:'Round 2',goal:40,duration:90,hopMs:420,nodeCount:10,openingFives:1,...EFFECTS,
-    phases:shaped([[20,24,24,18,12,2],[12,18,24,24,18,4],[6,12,20,28,28,6]]),spawner:{firstMs:6000,everyMs:11000,max:2,weights:{boost:2,freeze:2,cherry:3}}},
+  {name:'Round 1',goal:30,duration:90,hopMs:450,nodeCount:8,openingFives:2,...EFFECTS,freeze:{...EFFECTS.freeze,ms:7000},
+    phases:shaped([[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]]),spawner:{firstMs:8000,everyMs:12000,max:2,weights:{boost:1,freeze:1}}},
+  {name:'Round 2',goal:45,duration:90,hopMs:420,nodeCount:10,openingFives:1,...EFFECTS,
+    phases:shaped([[20,24,24,18,12,2],[12,18,24,24,18,4],[6,12,20,28,28,6]]),spawner:{firstMs:6000,everyMs:11000,max:2,weights:{boost:1,freeze:1,sweep:1}}},
   {name:'Round 3',goal:60,duration:80,hopMs:390,nodeCount:10,openingFives:1,...EFFECTS,
-    phases:shaped([[12,18,24,22,20,4],[8,14,22,26,24,6],[4,10,18,28,32,8]]),spawner:{firstMs:5000,everyMs:10000,max:2,weights:{boost:2,freeze:2,cherry:2,sweep:2,magnet:2}}},
+    phases:shaped([[12,18,24,22,20,4],[8,14,22,26,24,6],[4,10,18,28,32,8]]),spawner:{firstMs:5000,everyMs:10000,max:2,weights:{boost:2,freeze:2,sweep:2,magnet:2}}},
   {name:'Midnight',goal:null,duration:60,hopMs:360,nodeCount:10,openingFives:2,...EFFECTS,
     phases:shaped([[6,12,20,26,28,8],[4,10,18,28,30,10],[2,8,16,28,34,12]]),spawner:{firstMs:4000,everyMs:8000,max:2,weights:{boost:2,freeze:2,cherry:2,sweep:2,magnet:2,speed:2,expand:2}}},
 ]};

@@ -82,14 +82,17 @@ test('Rounds play the same for the same seed',()=>{
     for(let i=0;i<400&&!g.over;i++)g.advance(i%7===0?250:16);return JSON.stringify([g.score,g.roundIndex,g.ringTotalMs,[...g.nodes].sort(),g.events]);};
   assert.equal(run(),run());
 });
-test('the built-in Rounds: goals 20, 40, 60 and a Midnight finale, each round quicker; the timeline restarts each round',()=>{
-  const set=parseRoundSet(BUILTIN_ROUNDS);assert.ok(set);
-  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>r.goal),[20,40,60,null]);assert.equal(BUILTIN_ROUNDS.rounds.at(-1).name,'Midnight');
+test('the built-in Rounds as Tyler tuned them: goals 30, 45, 60 and a Midnight finale; the timeline restarts each round',()=>{
+  const set=parseRoundSet(BUILTIN_ROUNDS);assert.ok(set);assert.equal(BUILTIN_ROUNDS.rounds.at(-1).name,'Midnight');
   const d=BUILTIN_ROUNDS.rounds.map(r=>r.duration),h=BUILTIN_ROUNDS.rounds.map(r=>r.hopMs);
-  for(let i=1;i<d.length;i++){assert.ok(d[i]<d[i-1]);assert.ok(h[i]<h[i-1]);}
+  // DECISIONS U49: Tyler's designer set.
+  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>[r.goal,r.duration,r.hopMs,r.nodeCount,r.openingFives,r.boost.ms,r.freeze.ms]),
+    [[30,90,450,8,2,7000,7000],[45,90,420,10,1,7000,6000],[60,80,390,10,1,7000,6000],[null,60,360,10,2,7000,6000]]);
+  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>[r.spawner.firstMs,r.spawner.everyMs]),[[8000,12000],[6000,11000],[5000,10000],[4000,8000]]);
   // Powerups unlock round by round (U45).
   assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>Object.keys(r.spawner.weights).filter(k=>r.spawner.weights[k]>0)),
-    [['boost'],['boost','freeze','cherry'],['boost','freeze','cherry','sweep','magnet'],['boost','freeze','cherry','sweep','magnet','speed','expand']]);
+    [['boost','freeze'],['boost','freeze','sweep'],['boost','freeze','sweep','magnet'],['boost','freeze','cherry','sweep','magnet','speed','expand']]);
+  assert.deepEqual(set.rounds.map(r=>r.goal),[30,45,60,null],'parsing keeps the set as it is');
   for(const r of BUILTIN_ROUNDS.rounds)assert.ok(Math.abs(r.phases.reduce((a,p)=>a+p.fraction*p.speed,0)-1)<1e-12);
   const line=ringTimeline(BUILTIN_ROUNDS,19);assert.equal(line[0][1],FULL);assert.equal(line.at(-1)[0],d.reduce((a,b)=>a+b,0));
   const starts=line.filter((p,i)=>i>0&&p[2]!==line[i-1][2]);assert.equal(starts.length,3);for(const p of starts)assert.equal(p[1],FULL);
