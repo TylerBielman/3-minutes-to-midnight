@@ -1,5 +1,5 @@
 import {SHAPES,key,cell,same,neighbors,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
-import {NODE_VALUES,roundPhaseAt,roundRadius,roundBeats,pickValue,phaseWeights,type Round,type RoundSet} from './rounds.js';
+import {NODE_VALUES,roundPhaseAt,roundRadius,roundBeats,pickValue,phaseWeights,type PowerKind,type Round,type RoundSet} from './rounds.js';
 export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number,slots:number};
 export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:10,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000,slots:2};
 export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phases: share of the run and speed relative to the average needed to close on time.
@@ -21,8 +21,11 @@ export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phase
   // Endgame: the runway cap shrinks with the Ring's area (cells) so old road clears faster late in the run.
   endgameRoadDensity:.3,minRoadLimit:6,
   // Point-node target shrinks in proportion to the Ring's radius, never below this.
-  minNodes:2};
-export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'boost'|'freeze',boosted:boolean};
+  minNodes:2,
+  // Rounds: after a round clears, the Ring holds at full size this long while the banner shows.
+  roundHoldMs:2000};
+export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'boost'|'freeze'|'round',boosted:boolean};
+export type RoundResult={round:number,goal:number,score:number,atMs:number,ringMs:number};
 export type Draft={shapeId:string,turns:number};
 /** A moving node's bookkeeping. Times are on the live clock (`Game.liveMs`), so movers stop while frozen. */
 export type Mover={home:Cell,nextMoveAt:number,from:Cell|null,movedAt:number};
@@ -73,6 +76,11 @@ export class Game {
   private pieceRng:number;private nodeRng:number;private navRng:number;private moverRng:number;
   /** The rounds this run plays, and which one is in play. Classic unless a set is given. */
   readonly set:RoundSet;roundIndex=0;
+  /** Points scored in this round (toward its goal), rounds cleared, and how each cleared round went. */
+  roundScore=0;roundsCleared=0;roundLog:RoundResult[]=[];
+  /** Ring time over the whole run (ringMs restarts each round). */
+  ringTotalMs=0;
+  private ringHoldUntil=0;private nextPowerAt:number;private powerRng:number;
   get round():Round{return this.set.rounds[this.roundIndex];}
   constructor(settings:Partial<Settings>={},set?:RoundSet){
     this.settings={...DEFAULTS,...settings};
@@ -85,9 +93,10 @@ export class Game {
     s.boostSpeed=Number.isFinite(s.boostSpeed)?Math.max(1,Math.min(3,s.boostSpeed)):DEFAULTS.boostSpeed;
     s.boostMs=Number.isFinite(s.boostMs)?Math.max(500,Math.min(30000,s.boostMs)):DEFAULTS.boostMs;
     s.freezeMs=Number.isFinite(s.freezeMs)?Math.max(500,Math.min(30000,s.freezeMs)):DEFAULTS.freezeMs;
-    s.seed=s.seed>>>0;this.pieceRng=s.seed;this.nodeRng=s.seed^0xA9E3779B;this.navRng=s.seed^0x71B54A35;this.moverRng=s.seed^0x3C6EF372;
+    s.seed=s.seed>>>0;this.pieceRng=s.seed;this.nodeRng=s.seed^0xA9E3779B;this.navRng=s.seed^0x71B54A35;this.moverRng=s.seed^0x3C6EF372;this.powerRng=s.seed^0x6A09E667;
     this.set=set??classicSet(s);
     this.nextBoostAt=this.round.boost?.firstMs??Infinity;this.nextFreezeAt=this.round.freeze?.firstMs??Infinity;this.startingFives=this.round.openingFives;
+    this.nextPowerAt=this.round.spawner?.firstMs??Infinity;
     this.at={x:Math.floor(s.grid/2),y:Math.floor(s.grid/2)};
     this.board.add(key(this.at));this.visited.add(key(this.at));
     this.pieces.push({cells:[{...this.at}],shapeId:'Start'});
@@ -105,6 +114,10 @@ export class Game {
   /** The Ring's radius `ms` from now, allowing for the rest of any freeze. */
   radiusIn(ms:number){return roundRadius(this.ringMs+Math.max(0,ms-Math.max(0,this.freezeUntil-this.elapsed)),this.settings.grid,this.round);}
   get phase(){return roundPhaseAt(this.ringMs,this.round);}
+  /** Points still needed this round, or null in a round without a goal. */
+  get goal(){return this.round.goal;}
+  /** The Ring holds at full size for a moment after a round clears. */
+  get ringHeld(){return this.elapsed<this.ringHoldUntil;}
   /** Heartbeat count for the Ring's pulse (presentation). */
   get beats(){return roundBeats(this.ringMs,this.round);}
   /** Ring time left in this round (ms); the countdown. */
@@ -246,6 +259,7 @@ export class Game {
     const center2=(this.settings.grid-1)/2;
     const powerupCells=()=>eligible.filter(p=>Math.hypot(p.x-center2,p.y-center2)+TUNING.nodeRadius<this.radius-TUNING.powerupRingMargin);
     let safe=powerupCells();
+    if(this.round.spawner){this.spawnPowerup(safe);return;}
     if(this.round.boost&&!this.boostNode&&!this.boosted&&this.running&&this.elapsed>=this.nextBoostAt&&safe.length){
       const r=randomStep(this.nodeRng);this.nodeRng=r.state;[this.boostNode]=safe.splice(Math.floor(r.value*safe.length),1);this.record('boost-spawn',{at:this.boostNode});
     }
@@ -253,12 +267,45 @@ export class Game {
       const r=randomStep(this.nodeRng);this.nodeRng=r.state;[this.freezeNode]=safe.splice(Math.floor(r.value*safe.length),1);this.record('freeze-spawn',{at:this.freezeNode});
     }
   }
+  /** Rounds mode: one spawner for all powerups (see Spawner in src/rounds.ts). It has its own random stream. */
+  private spawnPowerup(safe:Cell[]){
+    const sp=this.round.spawner!;
+    if(!this.running||this.elapsed<this.nextPowerAt)return;
+    this.nextPowerAt=this.elapsed+sp.everyMs;
+    const open:[PowerKind,number][]=[];
+    if(this.round.boost&&!this.boostNode&&!this.boosted&&(sp.weights.boost??0)>0)open.push(['boost',sp.weights.boost!]);
+    if(this.round.freeze&&!this.freezeNode&&!this.frozen&&(sp.weights.freeze??0)>0)open.push(['freeze',sp.weights.freeze!]);
+    if((this.boostNode?1:0)+(this.freezeNode?1:0)>=sp.max||!open.length||!safe.length)return;
+    let r=randomStep(this.powerRng);this.powerRng=r.state;
+    let pick=r.value*open.reduce((a,[,w])=>a+w,0),kind=open[open.length-1][0];
+    for(const [k,w] of open){pick-=w;if(pick<0){kind=k;break;}}
+    r=randomStep(this.powerRng);this.powerRng=r.state;const [at]=safe.splice(Math.floor(r.value*safe.length),1);
+    if(kind==='boost')this.boostNode=at;else this.freezeNode=at;
+    this.record(`${kind}-spawn`,{at});
+  }
+  /** The round's goal is reached: the Ring resets to full and holds briefly, the next round's numbers apply, and its
+   *  nodes are dealt fresh. Road, draft, visits, the hop in flight, active powerups and powerups on the board carry over. */
+  private clearRound(){
+    this.roundLog.push({round:this.roundIndex+1,goal:this.round.goal!,score:this.roundScore,atMs:Math.round(this.elapsed),ringMs:Math.round(this.ringMs)});
+    this.record('round-clear',{round:this.roundIndex+1,score:this.roundScore});
+    this.roundIndex++;this.roundsCleared++;this.roundScore=0;this.ringMs=0;this.ringHoldUntil=this.elapsed+TUNING.roundHoldMs;
+    for(const k of [...this.nodes.keys()])this.dropNode(k);
+    if(!this.round.boost)this.boostNode=undefined;
+    if(!this.round.freeze)this.freezeNode=undefined;
+    // The Ring jumps away: that is not a close escape.
+    this.startingFives=this.round.openingFives;this.nearRing=false;
+    this.nextBoostAt=this.elapsed+(this.round.boost?.firstMs??0);this.nextFreezeAt=this.elapsed+(this.round.freeze?.firstMs??0);
+    this.nextPowerAt=this.elapsed+(this.round.spawner?.firstMs??0);
+    this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'round',boosted:false});
+  }
   advance(deltaMs:number){
     if(!this.running||this.over||!Number.isFinite(deltaMs)||deltaMs<=0)return;
     let remaining=deltaMs;
     while(remaining>0&&!this.over){
       const dt=Math.min(remaining,TUNING.simulationStep,this.hop?this.hop.duration-this.hop.elapsed:Infinity);
-      remaining-=dt;if(!this.frozen){this.ringMs+=dt;this.liveMs+=dt;}this.elapsed+=dt;if(this.hop)this.hop.elapsed+=dt;
+      remaining-=dt;
+      if(!this.frozen){if(this.elapsed>=this.ringHoldUntil){this.ringMs+=dt;this.ringTotalMs+=dt;}this.liveMs+=dt;}
+      this.elapsed+=dt;if(this.hop)this.hop.elapsed+=dt;
       const p=this.position,center=(this.settings.grid-1)/2;
       // Ground footprint, not the decorative vertical hop. Check before awarding pickups.
       const clearance=this.radius-Math.hypot(p.x-center,p.y-center)-this.settings.hitRadius;
@@ -278,11 +325,12 @@ export class Game {
         }
         const value=this.nodes.get(key(this.at));
         if(value!==undefined){
-          const boosted=this.boosted,points=boosted?value*2:value;this.score+=points;this.collected++;
+          const boosted=this.boosted,points=boosted?value*2:value;this.score+=points;this.roundScore+=points;this.collected++;
           if(this.movers.has(key(this.at)))this.moversCollected++;this.dropNode(key(this.at));
           this.record('collect',{at:this.at,value,points});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points,kind:'point',boosted});
         }
-        if(this.pickups.length>20)this.pickups.splice(0,this.pickups.length-20);
+        if(this.round.goal!==null&&this.roundScore>=this.round.goal&&this.roundIndex<this.set.rounds.length-1)this.clearRound();
+        if(this.pickups.length>40)this.pickups.splice(0,this.pickups.length-40);
         this.beginHop();this.revision++;
       }
       // After beginHop, so a mover knows the cell he is now committed to.

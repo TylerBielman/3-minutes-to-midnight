@@ -5,7 +5,7 @@ import {type Settings} from './game.js';
 import {type RunReport} from './stats.js';
 
 export type Entry={rank:number,name:string,score:number,me:boolean,at?:string};
-export type Board={source:'gtx'|'local',season:string|null,players:number,rank:number|null,previousRank:number|null,
+export type Board={source:'gtx'|'local',label?:string,trial?:boolean,season:string|null,players:number,rank:number|null,previousRank:number|null,
   best:number|null,previousBest:number|null,personalBest:boolean,entries:Entry[]};
 export type Tier='top'|'best'|'first'|'tied'|'close'|'run'|'tuned';
 export type Cheer={tier:Tier,headline:string,detail:string};
@@ -15,6 +15,12 @@ export const PLAYER_ROW_AT=1/3;
 /** Only default settings rank; the seed may be anything. Tune and URL overrides still play, unranked. */
 export function isRanked(settings:Settings|undefined,defaults:Settings):boolean{
   return !!settings&&typeof settings==='object'&&(Object.keys(defaults) as (keyof Settings)[]).every(k=>k==='seed'||settings[k]===defaults[k]);
+}
+
+/** A stored run that could rank: Classic mode (Rounds is an unranked trial) with default settings. Older reports have no
+ *  mode and are Classic. */
+export function isRankedReport(report:{mode?:string,settings?:Settings},defaults:Settings):boolean{
+  return report.mode!=='rounds'&&isRanked(report.settings,defaults);
 }
 
 const whole=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger(v)&&v>=0;
@@ -38,16 +44,18 @@ export function parseBoard(data:unknown):Board|null{
     personalBest:d.personal_best===true,entries:entries.sort((a,b)=>a.rank-b.rank)};
 }
 
-/** This device's completed, ranked runs of this build, best first; ties keep the earlier run ahead. */
-export function localBoard(runs:RunReport[],currentId:string,build:string,defaults:Settings):Board{
+/** This device's completed, ranked runs of this build, best first; ties keep the earlier run ahead. With `roundSet`,
+ *  the Rounds runs of that set instead (default settings too), so the unranked trial still has a best to beat. */
+export function localBoard(runs:RunReport[],currentId:string,build:string,defaults:Settings,roundSet?:string):Board{
+  const counts=(r:RunReport)=>roundSet?r.mode==='rounds'&&r.roundSet?.id===roundSet&&isRanked(r.settings,defaults):isRankedReport(r,defaults);
   // Stored history may hold reports from older builds or damaged storage; skip anything incomplete.
-  const ranked=runs.filter(r=>r.outcome==='caught'&&r.build===build&&typeof r.startedAt==='string'&&isRanked(r.settings,defaults))
+  const ranked=runs.filter(r=>r.outcome==='caught'&&r.build===build&&typeof r.startedAt==='string'&&counts(r))
     .sort((a,b)=>b.score-a.score||a.startedAt.localeCompare(b.startedAt));
   const current=ranked.find(r=>r.id===currentId),others=ranked.filter(r=>r.id!==currentId);
   const previousBest=others.length?others[0].score:null;
   let rank=0,last=-1;
   const entries=ranked.map((r,i)=>{if(r.score!==last){rank=i+1;last=r.score;}return {rank,name:'',score:r.score,me:r.id===currentId,at:r.startedAt};});
-  return {source:'local',season:null,players:ranked.length,rank:entries.find(e=>e.me)?.rank??null,previousRank:null,
+  return {source:'local',label:roundSet?'Your best Rounds runs · this device':undefined,trial:!!roundSet,season:null,players:ranked.length,rank:entries.find(e=>e.me)?.rank??null,previousRank:null,
     best:ranked.length?ranked[0].score:null,previousBest,personalBest:!!current&&(previousBest===null||current.score>previousBest),entries};
 }
 
@@ -69,9 +77,9 @@ export function anchorScroll(rowTop:number,viewHeight:number,contentHeight:numbe
 
 const GENERIC=['NICE RUN!','GREAT HOPPING!','WELL PLAYED!'];
 /** Every run gets a cheer. Better news gets a bigger one. */
-export function cheer(board:Board|null,score:number):Cheer{
+export function cheer(board:Board|null,score:number,unranked='Tuned run · not ranked'):Cheer{
   const generic=GENERIC[score%GENERIC.length];
-  if(!board)return {tier:'tuned',headline:generic,detail:'Tuned run · not ranked'};
+  if(!board)return {tier:'tuned',headline:generic,detail:unranked};
   const online=board.source==='gtx',where=online?'':' on this device';
   const standing=online&&board.rank?`#${board.rank} of ${board.players}`:'';
   const climb=online&&board.rank&&board.previousRank&&board.rank<board.previousRank?`▲ ${board.previousRank-board.rank}`:'';
@@ -79,7 +87,7 @@ export function cheer(board:Board|null,score:number):Cheer{
   if(board.personalBest&&online&&board.rank===1&&board.players>1)
     return {tier:'top',headline:'TOP OF THE BOARD!',detail:join(board.previousBest===null?'':`+${score-board.previousBest} on your best`,standing,climb)};
   if(board.personalBest&&board.previousBest===null)
-    return {tier:'first',headline:online?'YOU’RE ON THE BOARD!':'FIRST RANKED RUN!',detail:online?standing:'Your first on this device'};
+    return {tier:'first',headline:online?'YOU’RE ON THE BOARD!':board.trial?'FIRST ROUNDS RUN!':'FIRST RANKED RUN!',detail:online?standing:'Your first on this device'};
   if(board.personalBest)
     return {tier:'best',headline:'NEW PERSONAL BEST!',detail:join(`+${score-board.previousBest!} on your best${where}`,standing,climb)};
   const best=board.best??board.previousBest;

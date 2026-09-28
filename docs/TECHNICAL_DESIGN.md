@@ -127,6 +127,16 @@ The server is the Gametronyx leaderboard server: gametronyx repo, `server/`, at 
   - refuses impossible runs: score over 10 × nodes, nodes over hops, `ring_seconds` over the run length, or play time outside the Ring's time plus freezes. Playtest 7's 10s are worth 20 with x2, so the score cap must rise to 20 × nodes before Playtest 7 reaches main (DECISIONS U42).
 - **When Jerboa's defaults change** (a new playtest's tuning), the leaderboard needs a new season with the new ranked settings, or new runs are refused as not ranked. See gametronyx `docs/LAUNCH_CHECKLIST.md` Part H.
 
+## Rounds trial
+
+`new Game(settings, roundSet)` plays a set of rounds. `ringMs` is time within the round; `ringTotalMs` covers the run (run reports' `ringSeconds`). Each point collected adds to `roundScore`; after a landing's pickups, reaching the round's goal calls `clearRound`: log the round, advance `roundIndex`, reset `roundScore` and `ringMs`, hold the Ring for `TUNING.roundHoldMs`, drop every node (the refill at the end of the step deals the new round's full set, with its opening 5s), drop powerups the new round lacks, reset `nearRing`, restart the powerup timing, and push a `round` pickup for the renderer. Everything derived from the Ring's radius (node target, road cap, longest piece) resets by itself. The next hop uses the new round's hop speed. A set that is not parsed can't clear past its last round.
+
+Rounds with a `spawner` place powerups through `spawnPowerup` (own random stream, `powerRng`); Classic keeps its per-powerup timers and draw order. `main.ts` keeps the mode outside `Settings`: Tune's Mode select or `?mode=rounds[&set=custom]`. The HUD shows `ROUND n/N · score/goal` with a gold progress bar; a round change shows a bloom and banner instead of the phase banner (which now fires only when the phase rises). Reports add `mode`, `round`, `roundsTotal`, `roundsCleared`, `roundLog` and `roundSet` (a custom set in full). `isRankedReport` keeps Rounds runs off the leaderboard and the Classic device board.
+
+## Round designer
+
+`designer.html` + `src/designer.ts` (a second Vite entry). It edits a working copy of a set, stores it under `jerboa_custom_rounds_v1` whenever it is valid, and draws the Ring across the whole run (`ringTimeline`: every round at full length) as an SVG line with a crosshair readout and a table view. Play stores the parsed set and opens `index.html?mode=rounds&set=custom`; the game falls back to the built-in set, with a message, if that set can't be read. Share links carry the set as URL-safe base64 (`encodeRoundSet`/`decodeRoundSet`). All links are relative, so branch builds work.
+
 ## Golden replay
 
 `tests/replay.test.mjs` plays whole Classic runs with a deterministic bot through the public API and compares counters, clocks, board, nodes and an event-log hash with `tests/golden/replay-v1.json`. Refactors must pass it unchanged; after an intended gameplay change, rewrite it with `UPDATE_GOLDEN=1 npm test` and say why in the commit.

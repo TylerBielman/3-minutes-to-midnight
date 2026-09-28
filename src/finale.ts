@@ -3,7 +3,7 @@
 // show; this module only renders it.
 import {boardRows,anchorScroll,type Board,type Cheer,type Tier} from './leaderboard.js';
 
-export type FinaleRun={id:string,score:number,nodes:number,seconds:number,escapes:number};
+export type FinaleRun={id:string,score:number,nodes:number,seconds:number,escapes:number,round?:string};
 // armMs: Play again ignores taps this long, so a finger still on the draft tray at capture can't skip the celebration.
 const FX={countMs:900,armMs:700,settleMs:1800,confettiMs:3600,confetti:{top:64,best:56,first:48,tied:24,close:24,run:14,tuned:10} as Record<Tier,number>};
 const CONFETTI=['#ffdc73','#69e6dc','#c77dff','#5aa9ff','#ff5273','#f5a84a'];
@@ -79,7 +79,7 @@ export function createFinale(root:HTMLElement,onPlay:()=>void,site:string){
     timers.forEach(clearTimeout);timers=[];runId=run.id;armedAt=performance.now()+FX.armMs;
     root.dataset.tier='';root.classList.add('waiting');root.hidden=false;
     headline.textContent='';detail.textContent='';note.textContent='';title.textContent='LEADERBOARD';rows.replaceChildren();
-    stats.textContent=[`${run.nodes} node${run.nodes===1?'':'s'}`,`${clock(run.seconds)} survived`,run.escapes?`${run.escapes} close escape${run.escapes===1?'':'s'}`:''].filter(Boolean).join(' · ');
+    stats.textContent=[run.round??'',`${run.nodes} node${run.nodes===1?'':'s'}`,`${clock(run.seconds)} survived`,run.escapes?`${run.escapes} close escape${run.escapes===1?'':'s'}`:''].filter(Boolean).join(' · ');
     points.textContent='0';countUp(run.id,run.score);
     play.focus({preventScroll:true});
   }
@@ -89,7 +89,7 @@ export function createFinale(root:HTMLElement,onPlay:()=>void,site:string){
     if(id!==runId)return;
     root.classList.remove('waiting');root.dataset.tier=c.tier;
     headline.textContent=c.headline;detail.textContent=c.detail;setNote(message);
-    title.textContent=b.source==='gtx'?(b.season?`LEADERBOARD · ${b.season}`:'LEADERBOARD'):'YOUR BEST RUNS · THIS DEVICE';
+    title.textContent=b.source==='gtx'?(b.season?`LEADERBOARD · ${b.season}`:'LEADERBOARD'):(b.label??'Your best runs · this device').toUpperCase();
     board.dataset.source=b.source;renderRows(b);burst(c.tier);
     if(onSettled)later(FX.settleMs,()=>{if(runId===id)onSettled();});
   }

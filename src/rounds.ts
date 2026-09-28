@@ -10,6 +10,12 @@ export const NODE_VALUES=[1,2,3,4,5,10];
 export type Phase={fraction:number,speed:number,pulseMs:number,weights:number[]};
 /** A powerup on its own timer (Classic): first appearance, and delay after the previous one is collected or lost. */
 export type Timer={firstMs:number,respawnMs:number};
+export type PowerKind='boost'|'freeze';
+export const POWER_KINDS:PowerKind[]=['boost','freeze'];
+/** Rounds mode: one spawner for all powerups instead of a timer each. Every `everyMs` (first at `firstMs` into the
+ *  round) it places one powerup, picked by weight among the kinds this round has that are neither on the board nor
+ *  active, unless `max` are already on the board. */
+export type Spawner={firstMs:number,everyMs:number,max:number,weights:Partial<Record<PowerKind,number>>};
 export type Round={
   name:string,
   /** Points to score this round to clear it; null for a round that ends only in capture (Classic, the finale). */
@@ -21,6 +27,8 @@ export type Round={
   openingFives:number,
   boost:(Timer&{ms:number,speed:number})|null,
   freeze:(Timer&{ms:number})|null,
+  /** Present in Rounds mode; replaces the per-powerup timers. */
+  spawner?:Spawner|null,
 };
 export type RoundSet={v:1,id:string,name:string,rounds:Round[]};
 
@@ -76,10 +84,16 @@ function parseRound(x:Loose,i:number):Round|null{
     return {firstMs:whole(o.firstMs,0,600000,10000),respawnMs:whole(o.respawnMs,1000,600000,15000),ms:whole(o.ms,ms[0],ms[1],ms[2])};
   };
   const b=timer(x.boost,[500,30000,7000]),f=timer(x.freeze,[500,30000,6000]);
+  let spawner:Spawner|null=null;
+  if(x.spawner&&typeof x.spawner==='object'){
+    const o=x.spawner as Loose,w=(o.weights&&typeof o.weights==='object'?o.weights:{}) as Loose;
+    spawner={firstMs:whole(o.firstMs,0,600000,8000),everyMs:whole(o.everyMs,1000,600000,12000),max:whole(o.max,1,4,2),
+      weights:Object.fromEntries(POWER_KINDS.map(k=>[k,clamp(w[k],0,100,0)]))};
+  }
   const goal=x.goal===null||x.goal===undefined?null:whole(x.goal,1,100000,20);
   return {name:label(x.name,`Round ${i+1}`,24),goal,duration:clamp(x.duration,15,600,60),phases,hopMs:whole(x.hopMs,120,2000,450),
     nodeCount:whole(x.nodeCount,1,20,10),openingFives:whole(x.openingFives,0,5,0),
-    boost:b&&{...b,speed:clamp((x.boost as Loose).speed,1,3,1.4)},freeze:f};
+    boost:b&&{...b,speed:clamp((x.boost as Loose).speed,1,3,1.4)},freeze:f,spawner};
 }
 
 /** A round set from untrusted JSON (designer, share links, storage), clamped to playable limits; null if unusable.
@@ -95,4 +109,46 @@ export function parseRoundSet(raw:unknown):RoundSet|null{
   }
   rounds[rounds.length-1].goal=null;
   return {v:1,id:label(o.id,'custom').replace(/[^\w-]/g,'-'),name:label(o.name,'Custom rounds'),rounds};
+}
+
+// The built-in Rounds trial (DECISIONS U43): goals 20 / 40 / 60, each round's Ring a little shorter and his hops a
+// little quicker, freeze unlocked from round 2, and a Midnight finale with no goal. Starting values; tune in the designer.
+const CLASSIC_SHAPE=[{fraction:1/3,speed:.5,pulseMs:1400},{fraction:4/9,speed:.875,pulseMs:900},{fraction:2/9,speed:2,pulseMs:550}];
+const shaped=(weights:number[][])=>CLASSIC_SHAPE.map((p,i)=>({...p,weights:weights[i]}));
+const x2={firstMs:0,respawnMs:0,ms:7000,speed:1.4},ice={firstMs:0,respawnMs:0,ms:6000};
+export const BUILTIN_ROUNDS:RoundSet={v:1,id:'rounds',name:'Rounds',rounds:[
+  {name:'Round 1',goal:20,duration:100,hopMs:450,nodeCount:10,openingFives:2,boost:x2,freeze:null,
+    phases:shaped([[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]]),spawner:{firstMs:8000,everyMs:12000,max:2,weights:{boost:1}}},
+  {name:'Round 2',goal:40,duration:90,hopMs:420,nodeCount:10,openingFives:1,boost:x2,freeze:ice,
+    phases:shaped([[20,24,24,18,12,2],[12,18,24,24,18,4],[6,12,20,28,28,6]]),spawner:{firstMs:6000,everyMs:12000,max:2,weights:{boost:1,freeze:1}}},
+  {name:'Round 3',goal:60,duration:80,hopMs:390,nodeCount:10,openingFives:1,boost:x2,freeze:ice,
+    phases:shaped([[12,18,24,22,20,4],[8,14,22,26,24,6],[4,10,18,28,32,8]]),spawner:{firstMs:6000,everyMs:11000,max:2,weights:{boost:1,freeze:1}}},
+  {name:'Midnight',goal:null,duration:60,hopMs:360,nodeCount:10,openingFives:2,boost:x2,freeze:ice,
+    phases:shaped([[6,12,20,26,28,8],[4,10,18,28,30,10],[2,8,16,28,34,12]]),spawner:{firstMs:5000,everyMs:10000,max:2,weights:{boost:1,freeze:1}}},
+]};
+
+/** The Ring's radius across a whole run if every round lasts its full length: [time (s), radius (cells), round index]. */
+export function ringTimeline(set:RoundSet,grid:number,stepMs=1000):[number,number,number][]{
+  const points:[number,number,number][]=[];let start=0;
+  set.rounds.forEach((r,i)=>{
+    const end=r.duration*1000;
+    for(let t=0;t<end;t+=stepMs)points.push([(start+t)/1000,roundRadius(t,grid,r),i]);
+    points.push([(start+end)/1000,0,i]);start+=end;
+  });
+  return points;
+}
+
+/** Where the designer leaves a set for the game to play (`index.html?mode=rounds&set=custom`). */
+export const CUSTOM_ROUNDS_KEY='jerboa_custom_rounds_v1';
+/** A set as URL-safe base64 of its JSON, for share links (`designer.html#set=…`). */
+export function encodeRoundSet(set:RoundSet):string{
+  let binary='';for(const byte of new TextEncoder().encode(JSON.stringify(set)))binary+=String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+/** The set in a share link, validated like any outside set; null if it can't be read. */
+export function decodeRoundSet(text:string):RoundSet|null{
+  try{
+    const binary=atob(text.replace(/-/g,'+').replace(/_/g,'/'));
+    return parseRoundSet(JSON.parse(new TextDecoder().decode(Uint8Array.from(binary,c=>c.charCodeAt(0)))));
+  }catch{return null;}
 }

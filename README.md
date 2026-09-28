@@ -41,6 +41,8 @@ The jerboa ignores the Ring. Roads survive it. Every run ends when it catches hi
 
 **‹ Gametronyx** in the top bar and **More games** on the end screen go back to gametronyx.com.
 
+**Rounds (trial, not ranked).** Tune → Mode → Rounds, or open `?mode=rounds`. Each round has a points goal (20, 40, 60…): score it and the round clears at once, the Ring starts full again and the next round is faster. The last round, Midnight, has no goal. Design your own rounds at `designer.html` (Tune → Design rounds…): goals, Ring length, hop speed, nodes, point values and powerups, with a chart of the Ring across the run. **Play** runs your set; share links and JSON move it between devices.
+
 ## Playtest 2 changes
 
 Ring contact is more forgiving (0.10-cell radius; original 0.24 is available in Tune). Above 25 squares, each placement retires the oldest eligible whole pieces while protecting the current hop, the new piece and connected runway. The limit is soft when those protections prevent removal; Tune accepts 0 for unlimited. Removed squares flash amber and become available again.

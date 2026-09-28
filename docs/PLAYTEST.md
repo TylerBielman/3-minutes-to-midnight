@@ -44,6 +44,14 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 5. Collect x2, then freeze (or freeze, then x2): the phase line reads DOUBLE BONUS, the x2 bar shows ❄ and stops, and moving 10s stand still until the thaw.
 6. "‹ Gametronyx" in the top bar and "More games" on the end screen open gametronyx.com in the same tab. Without a session, "gametronyx.com" in the end-screen note is a link. On a 320-px-wide phone the top bar fits.
 
+## Rounds trial pass
+
+1. Tune → Mode → Rounds (or open `?mode=rounds`). The top line reads `ROUND 1/4 · 0/20`; Ring length, hop and node settings are greyed out.
+2. Score 20: the round clears at once. The Ring blooms back to full and holds for a moment, "ROUND 2 · GOAL 40" shows, fresh nodes appear, and the road stays. His hops get a little quicker.
+3. Freeze appears from round 2. In Midnight (the last round) there is no goal; the run ends when the Ring catches him. The end screen says which round you reached, and that Rounds isn't on the leaderboard.
+4. Open the designer (Tune → Design rounds…, or `designer.html`). Change a goal, a Ring length and the point values; watch the chart. Play: the game starts your set. Copy share link on the PC, open it on the phone.
+5. Say whether the goals feel reachable, whether clearing a round is exciting, and whether each round should be shorter or longer.
+
 ## Record observations
 
 - Device/browser, portrait dimensions, seed and Tune values.

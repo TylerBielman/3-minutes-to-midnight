@@ -3,7 +3,8 @@ import {cell,key,placementError,type Cell} from './runway.js';
 import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
 import {readHistory,saveReport,runReport,exportHistory,BUILD as RUN_BUILD,type Outcome,type RunReport} from './stats.js';
 import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,scoreRun,submitScore,queueScore,flushPending,DEFAULT_EVERY,MAX_FEEDBACK,type ScoreResult} from './gtx.js';
-import {isRanked,localBoard,cheer} from './leaderboard.js';
+import {isRankedReport,localBoard,cheer} from './leaderboard.js';
+import {BUILTIN_ROUNDS,CUSTOM_ROUNDS_KEY,parseRoundSet,type RoundSet} from './rounds.js';
 import {createFinale} from './finale.js';
 import {reverseTipsWanted,noteReversal,routeCrossesRing} from './tips.js';
 import './style.css';
@@ -20,6 +21,8 @@ app.innerHTML=`<main class="game-shell">
     </section></div>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
+    <label>Mode<select id="mode"><option value="classic">Classic · ranked</option><option value="rounds">Rounds · trial, not ranked</option></select></label>
+    <p id="rounds-help" hidden>Each round sets its own Ring length, hop speed, nodes and powerups, so those settings are greyed out. <a href="./designer.html">Design rounds…</a></p>
     <label>Run length<select id="duration"><option value="60">1 minute</option><option value="120">2 minutes</option><option value="180">3 minutes</option></select></label>
     <label>Board size<select id="grid"><option value="15">15 × 15</option><option value="19">19 × 19</option><option value="23">23 × 23</option></select></label>
     <label>Hop interval<select id="hop"><option value="300">Fast · 0.30 seconds</option><option value="450">Default · 0.45 seconds</option><option value="650">Slow · 0.65 seconds</option></select></label>
@@ -43,7 +46,21 @@ const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
 const query=new URLSearchParams(location.search);
 const numeric=(name:string,fallback:number)=>{const value=Number(query.get(name));return query.has(name)&&Number.isFinite(value)?value:fallback;};
 let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',DEFAULTS.nodeCount),slots:numeric('slots',DEFAULTS.slots),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000,freezeMs:numeric('freezeSec',DEFAULTS.freezeMs/1000)*1000};
-let game=new Game(settings),debug=query.has('debug');
+// Mode (DECISIONS U43): Classic is ranked; Rounds is an unranked trial playing the built-in set, or the designer's with
+// ?mode=rounds&set=custom. Mode lives outside Settings, so the ranked settings never change.
+type Mode='classic'|'rounds';
+let mode:Mode=query.get('mode')==='rounds'?'rounds':'classic',roundsNote='';
+const useCustom=query.get('set')==='custom';
+function roundSet():RoundSet|undefined{
+  if(mode==='classic')return undefined;
+  if(useCustom){
+    let set:RoundSet|null=null;try{set=parseRoundSet(JSON.parse(localStorage.getItem(CUSTOM_ROUNDS_KEY)??'null'));}catch{/* Storage may be disabled. */}
+    if(set)return {...set,id:'custom'};
+    roundsNote='That round set couldn’t be loaded, so the built-in Rounds are playing.';
+  }
+  return BUILTIN_ROUNDS;
+}
+let game=new Game(settings,roundSet()),debug=query.has('debug');
 const historyDialog=document.querySelector<HTMLDialogElement>('#history')!;
 // Phone testing uses HTTP over LAN, where randomUUID may be unavailable.
 const newRunId=()=>globalThis.crypto?.randomUUID?.()??`${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -114,15 +131,19 @@ const SCORE_NOTES:Record<Exclude<ScoreResult,{ok:true}>['reason'],string>={
   offline:'Couldn’t reach Gametronyx. This score will post next time.',limited:'Gametronyx is busy. This score will post next time.',
   unavailable:'The Gametronyx leaderboard isn’t open yet.',rejected:'This run couldn’t be ranked.'};
 async function finishRun(){
-  const id=runId,report=memoryRuns.get(id)??runReport(game,id,startedAt,'caught'),ranked=isRanked(report.settings,DEFAULTS),token=loadToken(gtxStore);
-  finale.show({id,score:report.score,nodes:report.nodes,seconds:report.seconds,escapes:report.nearMisses});
-  let board=localBoard(reports(),id,RUN_BUILD,DEFAULTS),note=!ranked?'Only runs with default settings are ranked.':token?'':'Launch Jerboa from gametronyx.com to get on the leaderboard.';
+  const id=runId,report=memoryRuns.get(id)??runReport(game,id,startedAt,'caught'),ranked=isRankedReport(report,DEFAULTS),token=loadToken(gtxStore);
+  const rounds=report.mode==='rounds',last=report.round===report.roundsTotal;
+  finale.show({id,score:report.score,nodes:report.nodes,seconds:report.seconds,escapes:report.nearMisses,
+    round:rounds?(last?`${game.round.name} · final round`:`Round ${report.round} of ${report.roundsTotal}`):undefined});
+  // Rounds is unranked, but its runs still have a best on this device to beat.
+  let board=localBoard(reports(),id,RUN_BUILD,DEFAULTS,rounds?report.roundSet?.id:undefined),
+    note=rounds?'Rounds is a trial, so it isn’t on the leaderboard yet.':!ranked?'Only runs with default settings are ranked.':token?'':'Launch Jerboa from gametronyx.com to get on the leaderboard.';
   if(ranked&&token){
     const run=scoreRun(report,BUILD),result=await submitScore(fetch,SCORES_API,token,run);
     if(result.ok){board=result.board;void flushPending(fetch,SCORES_API,token,gtxStore);}
     else{note=SCORE_NOTES[result.reason];if(result.reason==='offline'||result.reason==='limited')queueScore(gtxStore,run);if(result.reason==='expired')saveToken(gtxStore,null);}
   }
-  const c=cheer(ranked?board:null,report.score);
+  const c=cheer(ranked||rounds&&board.entries.some(e=>e.me)?board:null,report.score,rounds?'Rounds trial · not ranked':undefined);
   finale.fill(id,board,c,note,()=>{if(feedbackDue&&promptFeedback(feedbackDue))feedbackDue=0;});
   if(finale.open&&runId===id)announce(`${c.headline} ${report.score} point${report.score===1?'':'s'}. ${c.detail}`,color.points);
 }
@@ -132,11 +153,12 @@ const slotX=(i:number)=>195+(i-(game.draft.length-1)/2)*129;
 const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff',freeze:'#5aa9ff'};
 // Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
 // tipIntroMs: how long "tap him" pulses after the first placement; tipAnnouncements: danger announcements per run.
-const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipIntroMs:6000,tipAnnouncements:3};
-let message='Tap a piece to rotate. Drag up to start.',messageColor=color.muted;
+const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,roundSurgeMs:2000,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipIntroMs:6000,tipAnnouncements:3};
+const startMessage=()=>game.goal!==null?`Round 1: score ${game.goal} to clear it. Drag a piece up to start.`:'Tap a piece to rotate. Drag up to start.';
+let message=roundsNote||startMessage(),messageColor=roundsNote?color.red:color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
-let lastPhase=1,phaseSurgeAt=-Infinity,lastPickupSeq=0;
+let lastPhase=1,phaseSurgeAt=-Infinity,roundSurgeAt=-Infinity,lastPickupSeq=0;
 // Reverse tips (DECISIONS U38) are decided per run and stop once the player has reversed in two runs on this device.
 let reverseTips=reverseTipsWanted(gtxStore),tipCounted=false,firstPlacedAt=-Infinity,dangerIndex=-1,dangerAnnounced=0,wasDoubleBonus=false;
 type Particle={x:number,y:number,vx:number,vy:number,born:number,tint:string};
@@ -207,19 +229,24 @@ canvas.addEventListener('pointerup',event=>{
 });
 canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);window.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();checkpoint();}});
-function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings);runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];
+function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings,roundSet());runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;roundSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];
   reverseTips=reverseTipsWanted(gtxStore);tipCounted=false;firstPlacedAt=-Infinity;dangerIndex=-1;dangerAnnounced=0;wasDoubleBonus=false;
-  announce('Tap a piece to rotate. Drag up to start.');}
+  announce(startMessage());}
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
 document.querySelector('#tune')!.addEventListener('click',()=>{
   cancel();input('duration').value=String(game.settings.duration);input('grid').value=String(game.settings.grid);input('hop').value=String(game.settings.hopMs);
   input('nodes').value=String(game.settings.nodeCount);input('slots').value=String(game.settings.slots);input('seed').value=String(game.settings.seed);input('debug').checked=debug;dialog.showModal();
   input('limit').value=String(game.settings.roadLimit);input('hit').value=String(game.settings.hitRadius);
   input('boost-speed').value=String(game.settings.boostSpeed);input('boost-sec').value=String(game.settings.boostMs/1000);input('freeze-sec').value=String(game.settings.freezeMs/1000);
+  input('mode').value=mode;syncMode();
 });
+// In Rounds each round sets these itself.
+const PER_ROUND=['duration','hop','nodes','boost-speed','boost-sec','freeze-sec'];
+function syncMode(){const rounds=input('mode').value==='rounds';PER_ROUND.forEach(id=>{input(id).disabled=rounds;});document.querySelector<HTMLElement>('#rounds-help')!.hidden=!rounds;}
+input('mode').addEventListener('change',syncMode);
 document.querySelector('#apply')!.addEventListener('click',event=>{
   event.preventDefault();if(!dialog.querySelector('form')!.reportValidity())return;
-  debug=input('debug').checked;restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),slots:Number(input('slots').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000,freezeMs:Number(input('freeze-sec').value)*1000});dialog.close();
+  debug=input('debug').checked;mode=input('mode').value==='rounds'?'rounds':'classic';restart({...settings,duration:Number(input('duration').value),grid:Number(input('grid').value),hopMs:Number(input('hop').value),nodeCount:Number(input('nodes').value),slots:Number(input('slots').value),seed:Number(input('seed').value),roadLimit:Number(input('limit').value),hitRadius:Number(input('hit').value),boostSpeed:Number(input('boost-speed').value),boostMs:Number(input('boost-sec').value)*1000,freezeMs:Number(input('freeze-sec').value)*1000});dialog.close();
 });
 function draw(now:number){
   const dpr=Math.min(devicePixelRatio||1,3);if(canvas.width!==W*dpr){canvas.width=W*dpr;canvas.height=H*dpr;}
@@ -235,6 +262,12 @@ function draw(now:number){
     }
     // x2 during a freeze: the x2 countdown waits too (DECISIONS U40).
     if(game.doubleBonus)text('DOUBLE BONUS',195,39,11+Math.sin(now/140),color.boost,'center');
+    else if(game.set.rounds.length>1){
+      // Rounds: the round and its goal, with a gold progress bar along the top of the board.
+      const goal=game.goal;
+      text(goal===null?`${game.round.name.toUpperCase()} · FINAL ROUND`:`ROUND ${game.roundIndex+1}/${game.set.rounds.length} · ${game.roundScore}/${goal}`,195,39,11,goal===null?color.ring:color.points,'center');
+      if(goal!==null)roundRect(BOARD_X,59,BOARD_SIZE*Math.min(1,game.roundScore/goal),3,1.5,color.points);
+    }
     else text(game.running?`PHASE ${game.phase} / 3`:'READY',195,39,11,color.muted,'center');
     if(game.boosted){
       const left=game.boostLeft/(game.round.boost?.ms||1);
@@ -281,7 +314,7 @@ function draw(now:number){
   const center=screen({x:(game.settings.grid-1)/2,y:(game.settings.grid-1)/2}),radius=game.radius*scale();
   ctx.fillStyle='#070c1088';ctx.beginPath();ctx.rect(BOARD_X,BOARD_Y,BOARD_SIZE,BOARD_SIZE);ctx.arc(center.x,center.y,radius,0,Math.PI*2,true);ctx.fill('evenodd');
   // Heartbeat: sharp attack, eased decay. Beats quicken and strengthen each phase.
-  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen?Math.pow(1-(game.beats%1),2.2):0;
+  const phaseIndex=game.phase-1,beat=game.running&&!game.frozen&&!game.ringHeld?Math.pow(1-(game.beats%1),2.2):0;
   // Frozen: steady blue ring that blinks during its last FX.thawWarnMs.
   const thawing=game.frozen&&game.freezeUntil-game.elapsed<FX.thawWarnMs&&Math.floor(now/150)%2===0;
   const ringColor=game.frozen&&!thawing?color.freeze:color.ring;
@@ -291,6 +324,16 @@ function draw(now:number){
   ctx.restore();
   // Double bonus: a violet shimmer inside the frozen Ring.
   if(game.doubleBonus){ctx.save();ctx.globalAlpha=.55+.3*Math.sin(now/120);ctx.strokeStyle=color.boost;ctx.shadowColor=color.boost;ctx.shadowBlur=12;ctx.lineWidth=2;ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius-5),0,Math.PI*2);ctx.stroke();ctx.restore();}
+  // Round cleared: the Ring blooms back out and the next round is announced.
+  const bloom=(now-roundSurgeAt)/FX.roundSurgeMs;
+  if(bloom>=0&&bloom<1){
+    const e=1-(1-Math.min(1,bloom*2))**3,goal=game.goal;
+    ctx.save();ctx.globalAlpha=1-bloom;ctx.strokeStyle=color.points;ctx.lineWidth=5*(1-bloom)+1;ctx.shadowColor=color.points;ctx.shadowBlur=24;
+    ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius*e),0,Math.PI*2);ctx.stroke();
+    text(goal===null?game.round.name.toUpperCase():`ROUND ${game.roundIndex+1}`,195,BOARD_Y+BOARD_SIZE/2-12,30,color.points,'center');
+    text(goal===null?'NO GOAL · SCORE ALL YOU CAN':`GOAL ${goal} · THE RING SPEEDS UP`,195,BOARD_Y+BOARD_SIZE/2+18,13,color.points,'center');
+    ctx.restore();
+  }
   const surge=(now-phaseSurgeAt)/FX.phaseSurgeMs;
   if(surge>=0&&surge<1){
     ctx.save();ctx.globalAlpha=1-surge;ctx.strokeStyle=color.ring;ctx.lineWidth=6*(1-surge)+1;ctx.shadowColor=color.ring;ctx.shadowBlur=24;
@@ -356,10 +399,15 @@ function frame(now:number){
     // Feedback cadence only counts runs played with a Gametronyx session; the popup waits for the celebration.
     if(loadToken(gtxStore)){const {prompt,total}=countCompletedRun(gtxStore,feedbackEvery);if(prompt)feedbackDue=total;}
     void finishRun();}
-  if(game.running&&game.phase!==lastPhase){lastPhase=game.phase;phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}
+  // Only a rising phase quickens the Ring; a new round starts back at phase 1 without the banner.
+  if(game.running&&game.phase!==lastPhase){if(game.phase>lastPhase){phaseSurgeAt=now;announce(`Phase ${game.phase} · the Ring quickens.`,color.ring);}lastPhase=game.phase;}
   for(const pick of game.pickups)if(pick.seq>lastPickupSeq){
     lastPickupSeq=pick.seq;
-    if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${(game.round.freeze?.ms??0)/1000}s`,color.freeze);}
+    if(pick.kind==='round'){
+      roundSurgeAt=now;phaseSurgeAt=-Infinity;
+      announce(game.goal===null?`Round ${game.roundIndex} clear! ${game.round.name}: no goal, score all you can.`:`Round ${game.roundIndex} clear! Round ${game.roundIndex+1}: score ${game.goal}. The Ring speeds up.`,color.points);
+    }
+    else if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${(game.round.freeze?.ms??0)/1000}s`,color.freeze);}
     else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${(game.round.boost?.ms??0)/1000}s`,color.boost);}
     else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
   }
