@@ -51,6 +51,7 @@ These are simulation and desktop-browser checks. Physical phone touch feel, hote
 3. Freeze appears from round 2. In Midnight (the last round) there is no goal; the run ends when the Ring catches him. The end screen says which round you reached, and that Rounds isn't on the leaderboard.
 4. Open the designer (Tune → Design rounds…, or `designer.html`). Change a goal, a Ring length and the point values; watch the chart. Play: the game starts your set. Copy share link on the PC, open it on the phone.
 5. Say whether the goals feel reachable, whether clearing a round is exciting, and whether each round should be shorter or longer.
+6. New powerups, as the rounds unlock them: cherries (collect 2 for +10), sweep ✦ (takes every lowest-value node), magnet U (a pink ring; he grabs points within 2 cells for 6 s), speed » (faster hops, no bonus) and expand ↔ (the Ring steps back 1.5 cells). Is each one readable at a glance, and worth steering toward?
 
 ## Record observations
 

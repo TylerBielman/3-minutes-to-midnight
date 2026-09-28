@@ -12,6 +12,8 @@ export function runReport(game:Game,id:string,startedAt:string,outcome:Outcome){
     // Rounds trial (unranked). A custom set from the designer is kept whole so the run can be reviewed.
     mode:(game.set.id==='classic'?'classic':'rounds') as 'classic'|'rounds',round:game.roundIndex+1,roundsTotal:game.set.rounds.length,
     roundsCleared:game.roundsCleared,roundLog:[...game.roundLog],
+    expands:game.expands,ringRewoundSeconds:Math.round(game.ringRewoundMs)/1000,sweeps:game.sweeps,sweptNodes:game.sweptNodes,
+    magnets:game.magnets,magnetNodes:game.magnetNodes,speeds:game.speeds,cherrySets:game.cherrySets,
     roundSet:game.set.id==='classic'?null:{id:game.set.id,name:game.set.name,rounds:game.set.id==='custom'?game.set.rounds:undefined}};
 }
 export type RunReport=ReturnType<typeof runReport>;

@@ -1,5 +1,5 @@
 import {SHAPES,key,cell,same,neighbors,rotated,translated,placementError,randomStep,chooseNext,freshReach,type Cell,type Group} from './runway.js';
-import {NODE_VALUES,roundPhaseAt,roundRadius,roundBeats,pickValue,phaseWeights,type PowerKind,type Round,type RoundSet} from './rounds.js';
+import {NODE_VALUES,POWER_KINDS,roundPhaseAt,roundRadius,roundMsForRadius,roundBeats,pickValue,phaseWeights,type PowerKind,type Round,type RoundSet} from './rounds.js';
 export type Settings={duration:number,grid:number,hopMs:number,nodeCount:number,seed:number,spawn:'random'|'uncovered',roadLimit:number,hitRadius:number,boostSpeed:number,boostMs:number,freezeMs:number,slots:number};
 export const DEFAULTS:Settings={duration:180,grid:19,hopMs:450,nodeCount:10,seed:12345,spawn:'random',roadLimit:25,hitRadius:.10,boostSpeed:1.4,boostMs:7000,freezeMs:6000,slots:2};
 export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phases: share of the run and speed relative to the average needed to close on time.
@@ -24,7 +24,8 @@ export const TUNING={groupWeights:{common:.65,small:.15,large:.20},// Ring phase
   minNodes:2,
   // Rounds: after a round clears, the Ring holds at full size this long while the banner shows.
   roundHoldMs:2000};
-export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'boost'|'freeze'|'round',boosted:boolean};
+/** For the renderer: a point collected (`via` a sweep or magnet when not by landing), a powerup used, or a round cleared. */
+export type Pickup={seq:number,ms:number,at:Cell,points:number,kind:'point'|'round'|PowerKind,boosted:boolean,via?:'sweep'|'magnet'};
 export type RoundResult={round:number,goal:number,score:number,atMs:number,ringMs:number};
 export type Draft={shapeId:string,turns:number};
 /** A moving node's bookkeeping. Times are on the live clock (`Game.liveMs`), so movers stop while frozen. */
@@ -61,11 +62,16 @@ export class Game {
   pieces:{cells:Cell[],shapeId:string}[]=[];lastRemoved:Cell[]=[];
   rotations=0;reversals=0;invalidDrops=0;hops=0;removedPieces=0;removedSquares=0;peakSquares=1;
   nearMisses=0;minClearance:number|null=null;private nearRing=false;
-  boostNode?:Cell;boosts=0;private nextBoostAt:number;private startingFives:number;
+  /** Powerups on the board, keyed by cell. At most one of each kind. */
+  powerNodes=new Map<string,PowerKind>();
+  boosts=0;private nextBoostAt:number;private startingFives:number;
   /** x2 ends when the live clock reaches this, so a freeze pauses the x2 countdown too. */
   private boostEndsAt=0;
   /** Ring clock: advances with play except while frozen. Drives radius, phase, pulse and the countdown. */
-  ringMs=0;freezeNode?:Cell;freezeUntil=0;freezes=0;private nextFreezeAt:number;
+  ringMs=0;freezeUntil=0;freezes=0;private nextFreezeAt:number;
+  /** Rounds-only powerups (DECISIONS U45). Magnet and speed run on the live clock, so a freeze pauses them. */
+  expands=0;ringRewoundMs=0;sweeps=0;sweptNodes=0;magnets=0;magnetNodes=0;speeds=0;cherries=0;cherrySets=0;
+  private magnetEndsAt=0;private speedEndsAt=0;
   /** Live clock: play time that a freeze stops (the x2 countdown, moving nodes). Unlike ringMs it is never reset. */
   liveMs=0;
   /** Moving nodes, keyed by their current cell (a subset of `nodes`). */
@@ -107,6 +113,17 @@ export class Game {
   get radius(){return roundRadius(this.ringMs,this.settings.grid,this.round);}
   get frozen(){return this.elapsed<this.freezeUntil;}
   get boosted(){return this.liveMs<this.boostEndsAt;}
+  get magnetActive(){return this.liveMs<this.magnetEndsAt;}
+  get magnetLeft(){return Math.max(0,this.magnetEndsAt-this.liveMs);}
+  get sped(){return this.liveMs<this.speedEndsAt;}
+  get speedLeft(){return Math.max(0,this.speedEndsAt-this.liveMs);}
+  /** Where a powerup of this kind is on the board, if anywhere. */
+  powerAt(kind:PowerKind):Cell|undefined{for(const [k,v] of this.powerNodes)if(v===kind)return cell(k);return undefined;}
+  private placePower(kind:PowerKind,at?:Cell){for(const [k,v] of this.powerNodes)if(v===kind)this.powerNodes.delete(k);if(at)this.powerNodes.set(key(at),kind);}
+  get boostNode(){return this.powerAt('boost');}
+  set boostNode(at:Cell|undefined){this.placePower('boost',at);}
+  get freezeNode(){return this.powerAt('freeze');}
+  set freezeNode(at:Cell|undefined){this.placePower('freeze',at);}
   /** x2 time left (ms); it stands still while frozen. */
   get boostLeft(){return Math.max(0,this.boostEndsAt-this.liveMs);}
   /** x2 and freeze together: double points while the Ring and the x2 countdown both wait. */
@@ -186,10 +203,12 @@ export class Game {
       this.record('retire',piece);
     }
   }
+  /** x2 and speed both quicken hops; together the faster one wins (they don't multiply). */
+  private get hopSpeed(){return Math.max(this.boosted&&this.round.boost?this.round.boost.speed:1,this.sped&&this.round.speed?this.round.speed.speed:1);}
   private beginHop(){
     const result=chooseNext(this.board,this.visited,this.at,this.previous,this.navRng,this.reverseQueued);
     this.navRng=result.rng;this.reverseQueued=false;
-    if(result.next)this.hop={from:{...this.at},to:result.next,elapsed:0,duration:this.boosted&&this.round.boost?this.round.hopMs/this.round.boost.speed:this.round.hopMs};
+    if(result.next)this.hop={from:{...this.at},to:result.next,elapsed:0,duration:this.hopSpeed>1?this.round.hopMs/this.hopSpeed:this.round.hopMs};
   }
   /** Preview consumes a copy of route RNG and visit memory. Rendering never rerolls a tie. */
   preview():Cell[]{
@@ -222,7 +241,7 @@ export class Game {
     const center=(this.settings.grid-1)/2;
     const ok=(p:Cell)=>{
       const k=key(p);
-      if(this.nodes.has(k)||(this.boostNode&&same(p,this.boostNode))||(this.freezeNode&&same(p,this.freezeNode))||same(p,this.at)||(this.hop&&same(p,this.hop.to)))return false;
+      if(this.nodes.has(k)||this.powerNodes.has(k)||same(p,this.at)||(this.hop&&same(p,this.hop.to)))return false;
       if(this.settings.spawn==='uncovered'&&this.board.has(k))return false;
       return Math.hypot(p.x-center,p.y-center)+TUNING.nodeRadius<this.radius;
     };
@@ -240,12 +259,16 @@ export class Game {
   private refillNodes(){
     const center=(this.settings.grid-1)/2;
     for(const k of this.nodes.keys()){const [x,y]=k.split(',').map(Number);if(Math.hypot(x-center,y-center)+TUNING.nodeRadius>=this.radius)this.dropNode(k);}
-    if(this.boostNode&&Math.hypot(this.boostNode.x-center,this.boostNode.y-center)+TUNING.nodeRadius>=this.radius){this.boostNode=undefined;this.nextBoostAt=this.elapsed+(this.round.boost?.respawnMs??0);this.record('boost-lost');}
-    if(this.freezeNode&&Math.hypot(this.freezeNode.x-center,this.freezeNode.y-center)+TUNING.nodeRadius>=this.radius){this.freezeNode=undefined;this.nextFreezeAt=this.elapsed+(this.round.freeze?.respawnMs??0);this.record('freeze-lost');}
+    for(const kind of POWER_KINDS){
+      const at=this.powerAt(kind);if(!at||Math.hypot(at.x-center,at.y-center)+TUNING.nodeRadius<this.radius)continue;
+      this.placePower(kind);this.record(`${kind}-lost`);
+      if(kind==='boost')this.nextBoostAt=this.elapsed+(this.round.boost?.respawnMs??0);
+      if(kind==='freeze')this.nextFreezeAt=this.elapsed+(this.round.freeze?.respawnMs??0);
+    }
     const eligible:Cell[]=[];
     for(let y=0;y<this.settings.grid;y++)for(let x=0;x<this.settings.grid;x++){
       const p={x,y},k=key(p);
-      if(this.nodes.has(k)||(this.boostNode&&same(p,this.boostNode))||(this.freezeNode&&same(p,this.freezeNode))||same(p,this.at)||(this.hop&&same(p,this.hop.to)))continue;
+      if(this.nodes.has(k)||this.powerNodes.has(k)||same(p,this.at)||(this.hop&&same(p,this.hop.to)))continue;
       if(this.settings.spawn==='uncovered'&&this.board.has(k))continue;
       if(Math.hypot(x-center,y-center)+TUNING.nodeRadius<this.radius)eligible.push(p);
     }
@@ -272,16 +295,56 @@ export class Game {
     const sp=this.round.spawner!;
     if(!this.running||this.elapsed<this.nextPowerAt)return;
     this.nextPowerAt=this.elapsed+sp.everyMs;
-    const open:[PowerKind,number][]=[];
-    if(this.round.boost&&!this.boostNode&&!this.boosted&&(sp.weights.boost??0)>0)open.push(['boost',sp.weights.boost!]);
-    if(this.round.freeze&&!this.freezeNode&&!this.frozen&&(sp.weights.freeze??0)>0)open.push(['freeze',sp.weights.freeze!]);
-    if((this.boostNode?1:0)+(this.freezeNode?1:0)>=sp.max||!open.length||!safe.length)return;
+    const open=POWER_KINDS.filter(k=>(sp.weights[k]??0)>0&&this.canSpawn(k)).map(k=>[k,sp.weights[k]!] as [PowerKind,number]);
+    if(this.powerNodes.size>=sp.max||!open.length||!safe.length)return;
     let r=randomStep(this.powerRng);this.powerRng=r.state;
     let pick=r.value*open.reduce((a,[,w])=>a+w,0),kind=open[open.length-1][0];
     for(const [k,w] of open){pick-=w;if(pick<0){kind=k;break;}}
     r=randomStep(this.powerRng);this.powerRng=r.state;const [at]=safe.splice(Math.floor(r.value*safe.length),1);
-    if(kind==='boost')this.boostNode=at;else this.freezeNode=at;
-    this.record(`${kind}-spawn`,{at});
+    this.placePower(kind,at);this.record(`${kind}-spawn`,{at});
+  }
+  /** This round has the powerup (its settings, and a spawner weight in Rounds). */
+  private roundHas(kind:PowerKind){
+    const r=this.round,has=kind==='sweep'||!!r[kind];
+    return r.spawner?has&&(r.spawner.weights[kind]??0)>0:has&&(kind==='boost'||kind==='freeze');
+  }
+  /** A kind can be placed when the round has it, none is on the board, and its effect isn't running. */
+  private canSpawn(kind:PowerKind){
+    if(!this.roundHas(kind)||this.powerAt(kind))return false;
+    return !(kind==='boost'&&this.boosted||kind==='freeze'&&this.frozen||kind==='magnet'&&this.magnetActive||kind==='speed'&&this.sped);
+  }
+  /** Score a point node: by landing on it, a sweep or the magnet. x2 doubles it either way. */
+  private collect(k:string,via:'hop'|'sweep'|'magnet'){
+    const value=this.nodes.get(k)!,at=cell(k),boosted=this.boosted,points=boosted?value*2:value;
+    this.score+=points;this.roundScore+=points;this.collected++;
+    if(this.movers.has(k))this.moversCollected++;this.dropNode(k);
+    if(via==='sweep')this.sweptNodes++;if(via==='magnet')this.magnetNodes++;
+    this.record('collect',via==='hop'?{at,value,points}:{at,value,points,via});
+    this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at,points,kind:'point',boosted,...(via==='hop'?{}:{via})});
+  }
+  /** He landed on a powerup. */
+  private usePower(kind:PowerKind){
+    const at={...this.at},r=this.round,note=(points=0)=>this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...at},points,kind,boosted:this.boosted});
+    if(kind==='boost'){this.boostEndsAt=this.liveMs+(r.boost?.ms??0);this.nextBoostAt=this.elapsed+(r.boost?.respawnMs??0);this.boosts++;this.record('boost',{at});note();}
+    else if(kind==='freeze'){this.freezeUntil=this.elapsed+(r.freeze?.ms??0);this.nextFreezeAt=this.elapsed+(r.freeze?.respawnMs??0);this.freezes++;this.record('freeze',{at});note();}
+    else if(kind==='expand'){
+      // Push the Ring back out by a fixed distance by rewinding its clock; the phase may drop back.
+      const before=this.ringMs,full=this.settings.grid/2-.25;
+      this.ringMs=roundMsForRadius(Math.min(full,this.radius+(r.expand?.cells??0)),this.settings.grid,r);
+      this.ringRewoundMs+=before-this.ringMs;this.expands++;this.nearRing=false;this.record('expand',{at,from:Math.round(before),to:Math.round(this.ringMs)});note();
+    }
+    else if(kind==='sweep'){
+      this.sweeps++;this.record('sweep',{at});note();
+      const low=Math.min(...this.nodes.values());
+      for(const [k,v] of [...this.nodes])if(v===low)this.collect(k,'sweep');
+    }
+    else if(kind==='magnet'){this.magnetEndsAt=this.liveMs+(r.magnet?.ms??0);this.magnets++;this.record('magnet',{at});note();}
+    else if(kind==='speed'){this.speedEndsAt=this.liveMs+(r.speed?.ms??0);this.speeds++;this.record('speed',{at});note();}
+    else if(kind==='cherry'){
+      this.cherries++;let points=0;
+      if(r.cherry&&this.cherries>=r.cherry.set){this.cherries-=r.cherry.set;this.cherrySets++;points=r.cherry.bonus;this.score+=points;this.roundScore+=points;}
+      this.record('cherry',{at,points});note(points);
+    }
   }
   /** The round's goal is reached: the Ring resets to full and holds briefly, the next round's numbers apply, and its
    *  nodes are dealt fresh. Road, draft, visits, the hop in flight, active powerups and powerups on the board carry over. */
@@ -290,8 +353,7 @@ export class Game {
     this.record('round-clear',{round:this.roundIndex+1,score:this.roundScore});
     this.roundIndex++;this.roundsCleared++;this.roundScore=0;this.ringMs=0;this.ringHoldUntil=this.elapsed+TUNING.roundHoldMs;
     for(const k of [...this.nodes.keys()])this.dropNode(k);
-    if(!this.round.boost)this.boostNode=undefined;
-    if(!this.round.freeze)this.freezeNode=undefined;
+    for(const [k,kind] of [...this.powerNodes])if(!this.roundHas(kind))this.powerNodes.delete(k);
     // The Ring jumps away: that is not a close escape.
     this.startingFives=this.round.openingFives;this.nearRing=false;
     this.nextBoostAt=this.elapsed+(this.round.boost?.firstMs??0);this.nextFreezeAt=this.elapsed+(this.round.freeze?.firstMs??0);
@@ -315,20 +377,11 @@ export class Game {
       if(clearance>.75&&this.nearRing){this.nearRing=false;this.nearMisses++;this.record('near-miss',{position:p});}
       if(this.hop&&this.hop.elapsed>=this.hop.duration){
         this.previous=this.hop.from;this.at=this.hop.to;this.hop=undefined;this.visited.add(key(this.at));this.hops++;this.record('hop',{at:this.at});
-        if(this.boostNode&&same(this.boostNode,this.at)){
-          this.boostNode=undefined;this.boostEndsAt=this.liveMs+(this.round.boost?.ms??0);this.nextBoostAt=this.elapsed+(this.round.boost?.respawnMs??0);this.boosts++;
-          this.record('boost',{at:this.at});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'boost',boosted:true});
-        }
-        if(this.freezeNode&&same(this.freezeNode,this.at)){
-          this.freezeNode=undefined;this.freezeUntil=this.elapsed+(this.round.freeze?.ms??0);this.nextFreezeAt=this.elapsed+(this.round.freeze?.respawnMs??0);this.freezes++;
-          this.record('freeze',{at:this.at});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points:0,kind:'freeze',boosted:this.boosted});
-        }
-        const value=this.nodes.get(key(this.at));
-        if(value!==undefined){
-          const boosted=this.boosted,points=boosted?value*2:value;this.score+=points;this.roundScore+=points;this.collected++;
-          if(this.movers.has(key(this.at)))this.moversCollected++;this.dropNode(key(this.at));
-          this.record('collect',{at:this.at,value,points});this.pickups.push({seq:++this.pickupSeq,ms:this.elapsed,at:{...this.at},points,kind:'point',boosted});
-        }
+        const here=key(this.at),power=this.powerNodes.get(here);
+        if(power){this.powerNodes.delete(here);this.usePower(power);}
+        if(this.nodes.has(here))this.collect(here,'hop');
+        // The magnet also collects every node within its range of where he lands.
+        if(this.magnetActive&&this.round.magnet)for(const k of [...this.nodes.keys()]){const p=cell(k);if(Math.hypot(p.x-this.at.x,p.y-this.at.y)<=this.round.magnet.range)this.collect(k,'magnet');}
         if(this.round.goal!==null&&this.roundScore>=this.round.goal&&this.roundIndex<this.set.rounds.length-1)this.clearRound();
         if(this.pickups.length>40)this.pickups.splice(0,this.pickups.length-40);
         this.beginHop();this.revision++;

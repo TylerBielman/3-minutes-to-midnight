@@ -41,7 +41,7 @@ The jerboa ignores the Ring. Roads survive it. Every run ends when it catches hi
 
 **‹ Gametronyx** in the top bar and **More games** on the end screen go back to gametronyx.com.
 
-**Rounds (trial, not ranked).** Tune → Mode → Rounds, or open `?mode=rounds`. Each round has a points goal (20, 40, 60…): score it and the round clears at once, the Ring starts full again and the next round is faster. The last round, Midnight, has no goal. Design your own rounds at `designer.html` (Tune → Design rounds…): goals, Ring length, hop speed, nodes, point values and powerups, with a chart of the Ring across the run. **Play** runs your set; share links and JSON move it between devices.
+**Rounds (trial, not ranked).** Tune → Mode → Rounds, or open `?mode=rounds`. Each round has a points goal (20, 40, 60…): score it and the round clears at once, the Ring starts full again and the next round is faster. The last round, Midnight, has no goal. Rounds unlock new powerups as they go: cherries (collect a set for bonus points), sweep ✦ (takes every lowest-value node), magnet U (he grabs points near him), speed » (faster hops, no bonus) and expand ↔ (pushes the Ring back). Design your own rounds at `designer.html` (Tune → Design rounds…): goals, Ring length, hop speed, nodes, point values and every powerup, with a chart of the Ring across the run. **Play** runs your set; share links and JSON move it between devices.
 
 ## Playtest 2 changes
 

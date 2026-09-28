@@ -10,8 +10,9 @@ export const NODE_VALUES=[1,2,3,4,5,10];
 export type Phase={fraction:number,speed:number,pulseMs:number,weights:number[]};
 /** A powerup on its own timer (Classic): first appearance, and delay after the previous one is collected or lost. */
 export type Timer={firstMs:number,respawnMs:number};
-export type PowerKind='boost'|'freeze';
-export const POWER_KINDS:PowerKind[]=['boost','freeze'];
+/** Powerups. x2 ('boost') and freeze exist in Classic; the rest are Rounds-only (DECISIONS U45). */
+export type PowerKind='boost'|'freeze'|'expand'|'sweep'|'magnet'|'speed'|'cherry';
+export const POWER_KINDS:PowerKind[]=['boost','freeze','expand','sweep','magnet','speed','cherry'];
 /** Rounds mode: one spawner for all powerups instead of a timer each. Every `everyMs` (first at `firstMs` into the
  *  round) it places one powerup, picked by weight among the kinds this round has that are neither on the board nor
  *  active, unless `max` are already on the board. */
@@ -29,7 +30,18 @@ export type Round={
   freeze:(Timer&{ms:number})|null,
   /** Present in Rounds mode; replaces the per-powerup timers. */
   spawner?:Spawner|null,
+  /** Expand pushes the Ring back out by `cells` (never past full size). */
+  expand?:{cells:number}|null,
+  /** Magnet: for `ms` of live time, each landing also collects nodes within `range` cells. */
+  magnet?:{ms:number,range:number}|null,
+  /** Speed: hops `speed`× faster for `ms` of live time; no scoring bonus. */
+  speed?:{ms:number,speed:number}|null,
+  /** Cherries: every `set` collected pays `bonus` points (not doubled). */
+  cherry?:{set:number,bonus:number}|null,
+  // Sweep has no settings: it collects every node of the lowest value on the board.
 };
+/** The powerups a round's spawner can place. */
+export const unlockedKinds=(r:Round)=>POWER_KINDS.filter(k=>(r.spawner?.weights[k]??0)>0);
 export type RoundSet={v:1,id:string,name:string,rounds:Round[]};
 
 const phaseLengths=(r:Round)=>r.phases.map(p=>p.fraction*r.duration*1000);
@@ -52,6 +64,17 @@ export function roundBeats(ringMs:number,r:Round):number{
   r.phases.forEach((p,i)=>{const time=Math.min(lengths[i],remaining);beats+=time/p.pulseMs;remaining-=time;});
   return beats;
 }
+/** Inverse of roundRadius: how far into the round (ms) the Ring has this radius. Clamped to the round. */
+export function roundMsForRadius(radius:number,grid:number,r:Round):number{
+  const initial=grid/2-.25,lengths=phaseLengths(r);
+  let left=initial-radius,start=0;if(left<=0)return 0;
+  for(const [i,p] of r.phases.entries()){
+    const rate=initial/(r.duration*1000)*p.speed,span=rate*lengths[i];
+    if(left<=span)return start+left/rate;
+    left-=span;start+=lengths[i];
+  }
+  return r.duration*1000;
+}
 /** A value drawn by weight: `roll` in [0,1). */
 export function pickValue(weights:number[],roll:number,values=NODE_VALUES):number{
   const total=weights.reduce((a,b)=>a+b,0);
@@ -65,6 +88,7 @@ const clamp=(v:unknown,lo:number,hi:number,fallback:number)=>typeof v==='number'
 const whole=(v:unknown,lo:number,hi:number,fallback:number)=>Math.round(clamp(v,lo,hi,fallback));
 const label=(v:unknown,fallback:string,max=40)=>typeof v==='string'&&v.trim()?v.trim().slice(0,max):fallback;
 type Loose=Record<string,unknown>;
+const obj=(v:unknown)=>v&&typeof v==='object'?v as Loose:null;
 
 function parseRound(x:Loose,i:number):Round|null{
   if(!Array.isArray(x.phases)||!x.phases.length)return null;
@@ -93,7 +117,11 @@ function parseRound(x:Loose,i:number):Round|null{
   const goal=x.goal===null||x.goal===undefined?null:whole(x.goal,1,100000,20);
   return {name:label(x.name,`Round ${i+1}`,24),goal,duration:clamp(x.duration,15,600,60),phases,hopMs:whole(x.hopMs,120,2000,450),
     nodeCount:whole(x.nodeCount,1,20,10),openingFives:whole(x.openingFives,0,5,0),
-    boost:b&&{...b,speed:clamp((x.boost as Loose).speed,1,3,1.4)},freeze:f,spawner};
+    boost:b&&{...b,speed:clamp((x.boost as Loose).speed,1,3,1.4)},freeze:f,spawner,
+    expand:obj(x.expand)&&{cells:clamp(obj(x.expand)!.cells,.25,5,1.5)},
+    magnet:obj(x.magnet)&&{ms:whole(obj(x.magnet)!.ms,500,30000,6000),range:clamp(obj(x.magnet)!.range,1,4,2)},
+    speed:obj(x.speed)&&{ms:whole(obj(x.speed)!.ms,500,30000,5000),speed:clamp(obj(x.speed)!.speed,1,3,1.8)},
+    cherry:obj(x.cherry)&&{set:whole(obj(x.cherry)!.set,1,5,2),bonus:whole(obj(x.cherry)!.bonus,1,100,10)}};
 }
 
 /** A round set from untrusted JSON (designer, share links, storage), clamped to playable limits; null if unusable.
@@ -111,20 +139,22 @@ export function parseRoundSet(raw:unknown):RoundSet|null{
   return {v:1,id:label(o.id,'custom').replace(/[^\w-]/g,'-'),name:label(o.name,'Custom rounds'),rounds};
 }
 
-// The built-in Rounds trial (DECISIONS U43): goals 20 / 40 / 60, each round's Ring a little shorter and his hops a
-// little quicker, freeze unlocked from round 2, and a Midnight finale with no goal. Starting values; tune in the designer.
+// The built-in Rounds trial (DECISIONS U43, U45): goals 20 / 40 / 60, each round's Ring a little shorter and his hops a
+// little quicker, and a Midnight finale with no goal. Powerups unlock round by round: x2; then freeze and cherries; then
+// sweep and magnet; Midnight adds speed and expand. Starting values; tune in the designer.
 const CLASSIC_SHAPE=[{fraction:1/3,speed:.5,pulseMs:1400},{fraction:4/9,speed:.875,pulseMs:900},{fraction:2/9,speed:2,pulseMs:550}];
 const shaped=(weights:number[][])=>CLASSIC_SHAPE.map((p,i)=>({...p,weights:weights[i]}));
-const x2={firstMs:0,respawnMs:0,ms:7000,speed:1.4},ice={firstMs:0,respawnMs:0,ms:6000};
+const EFFECTS={boost:{firstMs:0,respawnMs:0,ms:7000,speed:1.4},freeze:{firstMs:0,respawnMs:0,ms:6000},expand:{cells:1.5},
+  magnet:{ms:6000,range:2},speed:{ms:5000,speed:1.8},cherry:{set:2,bonus:10}};
 export const BUILTIN_ROUNDS:RoundSet={v:1,id:'rounds',name:'Rounds',rounds:[
-  {name:'Round 1',goal:20,duration:100,hopMs:450,nodeCount:10,openingFives:2,boost:x2,freeze:null,
+  {name:'Round 1',goal:20,duration:100,hopMs:450,nodeCount:10,openingFives:2,...EFFECTS,
     phases:shaped([[30,28,22,14,6,1],[15,20,25,22,18,3],[6,12,22,28,32,6]]),spawner:{firstMs:8000,everyMs:12000,max:2,weights:{boost:1}}},
-  {name:'Round 2',goal:40,duration:90,hopMs:420,nodeCount:10,openingFives:1,boost:x2,freeze:ice,
-    phases:shaped([[20,24,24,18,12,2],[12,18,24,24,18,4],[6,12,20,28,28,6]]),spawner:{firstMs:6000,everyMs:12000,max:2,weights:{boost:1,freeze:1}}},
-  {name:'Round 3',goal:60,duration:80,hopMs:390,nodeCount:10,openingFives:1,boost:x2,freeze:ice,
-    phases:shaped([[12,18,24,22,20,4],[8,14,22,26,24,6],[4,10,18,28,32,8]]),spawner:{firstMs:6000,everyMs:11000,max:2,weights:{boost:1,freeze:1}}},
-  {name:'Midnight',goal:null,duration:60,hopMs:360,nodeCount:10,openingFives:2,boost:x2,freeze:ice,
-    phases:shaped([[6,12,20,26,28,8],[4,10,18,28,30,10],[2,8,16,28,34,12]]),spawner:{firstMs:5000,everyMs:10000,max:2,weights:{boost:1,freeze:1}}},
+  {name:'Round 2',goal:40,duration:90,hopMs:420,nodeCount:10,openingFives:1,...EFFECTS,
+    phases:shaped([[20,24,24,18,12,2],[12,18,24,24,18,4],[6,12,20,28,28,6]]),spawner:{firstMs:6000,everyMs:11000,max:2,weights:{boost:2,freeze:2,cherry:3}}},
+  {name:'Round 3',goal:60,duration:80,hopMs:390,nodeCount:10,openingFives:1,...EFFECTS,
+    phases:shaped([[12,18,24,22,20,4],[8,14,22,26,24,6],[4,10,18,28,32,8]]),spawner:{firstMs:5000,everyMs:10000,max:2,weights:{boost:2,freeze:2,cherry:2,sweep:2,magnet:2}}},
+  {name:'Midnight',goal:null,duration:60,hopMs:360,nodeCount:10,openingFives:2,...EFFECTS,
+    phases:shaped([[6,12,20,26,28,8],[4,10,18,28,30,10],[2,8,16,28,34,12]]),spawner:{firstMs:4000,everyMs:8000,max:2,weights:{boost:2,freeze:2,cherry:2,sweep:2,magnet:2,speed:2,expand:2}}},
 ]};
 
 /** The Ring's radius across a whole run if every round lasts its full length: [time (s), radius (cells), round index]. */

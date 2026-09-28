@@ -76,7 +76,9 @@ test('the built-in Rounds: goals 20, 40, 60 and a Midnight finale, each round qu
   assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>r.goal),[20,40,60,null]);assert.equal(BUILTIN_ROUNDS.rounds.at(-1).name,'Midnight');
   const d=BUILTIN_ROUNDS.rounds.map(r=>r.duration),h=BUILTIN_ROUNDS.rounds.map(r=>r.hopMs);
   for(let i=1;i<d.length;i++){assert.ok(d[i]<d[i-1]);assert.ok(h[i]<h[i-1]);}
-  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>Object.keys(r.spawner.weights).filter(k=>r.spawner.weights[k]>0)),[['boost'],['boost','freeze'],['boost','freeze'],['boost','freeze']]);
+  // Powerups unlock round by round (U45).
+  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>Object.keys(r.spawner.weights).filter(k=>r.spawner.weights[k]>0)),
+    [['boost'],['boost','freeze','cherry'],['boost','freeze','cherry','sweep','magnet'],['boost','freeze','cherry','sweep','magnet','speed','expand']]);
   for(const r of BUILTIN_ROUNDS.rounds)assert.ok(Math.abs(r.phases.reduce((a,p)=>a+p.fraction*p.speed,0)-1)<1e-12);
   const line=ringTimeline(BUILTIN_ROUNDS,19);assert.equal(line[0][1],FULL);assert.equal(line.at(-1)[0],d.reduce((a,b)=>a+b,0));
   const starts=line.filter((p,i)=>i>0&&p[2]!==line[i-1][2]);assert.equal(starts.length,3);for(const p of starts)assert.equal(p[1],FULL);

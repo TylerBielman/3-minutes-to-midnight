@@ -4,7 +4,7 @@ import {gestureMode,downwardSwipe,type GestureMode} from './input.js';
 import {readHistory,saveReport,runReport,exportHistory,BUILD as RUN_BUILD,type Outcome,type RunReport} from './stats.js';
 import {readHandoffCode,loadToken,saveToken,redeemHandoff,fetchCadence,countCompletedRun,sendFeedback,scoreRun,submitScore,queueScore,flushPending,DEFAULT_EVERY,MAX_FEEDBACK,type ScoreResult} from './gtx.js';
 import {isRankedReport,localBoard,cheer} from './leaderboard.js';
-import {BUILTIN_ROUNDS,CUSTOM_ROUNDS_KEY,parseRoundSet,type RoundSet} from './rounds.js';
+import {BUILTIN_ROUNDS,CUSTOM_ROUNDS_KEY,parseRoundSet,unlockedKinds,type PowerKind,type RoundSet} from './rounds.js';
 import {createFinale} from './finale.js';
 import {reverseTipsWanted,noteReversal,routeCrossesRing} from './tips.js';
 import './style.css';
@@ -151,14 +151,38 @@ const W=390,H=626,BOARD_Y=64,BOARD_SIZE=386,BOARD_X=2,DRAFT_Y=528;
 // Slot centers, spread evenly for 1-3 draft slots.
 const slotX=(i:number)=>195+(i-(game.draft.length-1)/2)*129;
 const color={bg:'#111820',road:'#354653',seam:'#667786',route:'#69e6dc',points:'#ffdc73',ring:'#f5a84a',red:'#ff5273',ink:'#f2f6f8',muted:'#a9bac5',boost:'#c77dff',freeze:'#5aa9ff'};
+// Powerups: each has a colour and a glyph, so identity never rests on colour alone. x2 and freeze look as before.
+const POWER_LOOK:Record<PowerKind,{tint:string,glyph:string,ink:string,size:number,dy:number,pulse:number,name:string,about:string}>={
+  boost:{tint:color.boost,glyph:'x2',ink:'#1d1026',size:.5,dy:0,pulse:180,name:'x2',about:'double points, faster hops'},
+  freeze:{tint:color.freeze,glyph:'❄',ink:'#0c1a2e',size:.58,dy:.5,pulse:220,name:'Freeze',about:'time stops'},
+  expand:{tint:color.ring,glyph:'↔',ink:color.ring,size:.5,dy:0,pulse:200,name:'Expand',about:'pushes the Ring back'},
+  sweep:{tint:'#eef3f6',glyph:'✦',ink:'#1a2530',size:.55,dy:.5,pulse:200,name:'Sweep',about:'takes every lowest-value node'},
+  magnet:{tint:'#ff8fd1',glyph:'U',ink:'#3a0f28',size:.55,dy:.5,pulse:200,name:'Magnet',about:'he grabs points near him'},
+  speed:{tint:'#c9f26b',glyph:'»',ink:'#1f2a08',size:.62,dy:-.5,pulse:200,name:'Speed',about:'faster hops, no bonus'},
+  cherry:{tint:'#ff4d6d',glyph:'',ink:'',size:0,dy:0,pulse:200,name:'Cherries',about:'a set pays bonus points'},
+};
+/** A powerup at screen point (x,y), `s` pixels per cell. Expand is a ring (it pushes the Ring); cherries are drawn. */
+function drawPower(kind:PowerKind,x:number,y:number,s:number,now:number){
+  const look=POWER_LOOK[kind],glow=.5+.5*Math.sin(now/look.pulse);
+  ctx.save();ctx.shadowColor=look.tint;ctx.shadowBlur=6+8*glow;
+  if(kind==='cherry'){
+    ctx.strokeStyle='#7ee081';ctx.lineWidth=Math.max(1.2,s*.07);ctx.beginPath();
+    ctx.moveTo(x-s*.15,y+s*.06);ctx.quadraticCurveTo(x-s*.06,y-s*.24,x+s*.06,y-s*.32);ctx.moveTo(x+s*.15,y+s*.06);ctx.quadraticCurveTo(x+s*.1,y-s*.2,x+s*.06,y-s*.32);ctx.stroke();
+    ctx.fillStyle=look.tint;for(const dx of [-.15,.15]){ctx.beginPath();ctx.arc(x+dx*s,y+s*.14,s*.17,0,Math.PI*2);ctx.fill();}
+    ctx.restore();return;
+  }
+  if(kind==='expand'){ctx.strokeStyle=look.tint;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(x,y,s*.36,0,Math.PI*2);ctx.stroke();}
+  else{ctx.fillStyle=look.tint;ctx.beginPath();ctx.arc(x,y,s*.4,0,Math.PI*2);ctx.fill();}
+  ctx.restore();text(look.glyph,x,y+look.dy,Math.max(10,s*look.size),look.ink,'center');
+}
 // Presentation-only tuning. Ring beat periods live in TUNING.ringPulseMs.
 // tipIntroMs: how long "tap him" pulses after the first placement; tipAnnouncements: danger announcements per run.
-const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,roundSurgeMs:2000,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipIntroMs:6000,tipAnnouncements:3};
+const FX={pulseWidth:[1.5,2.5,3.5],pulseGlow:[6,12,18],phaseSurgeMs:1400,roundSurgeMs:2800,burstMs:750,burstParticles:14,burstSpeed:.09,thawWarnMs:1500,tipIntroMs:6000,tipAnnouncements:3};
 const startMessage=()=>game.goal!==null?`Round 1: score ${game.goal} to clear it. Drag a piece up to start.`:'Tap a piece to rotate. Drag up to start.';
 let message=roundsNote||startMessage(),messageColor=roundsNote?color.red:color.muted;
 let flashSlot=-1,flashUntil=0,lastTime=performance.now(),drawnRevision=-1,route:Cell[]=[];
 let lastOver=false,removedUntil=0;
-let lastPhase=1,phaseSurgeAt=-Infinity,roundSurgeAt=-Infinity,lastPickupSeq=0;
+let lastPhase=1,phaseSurgeAt=-Infinity,roundSurgeAt=-Infinity,lastPickupSeq=0,roundNews='';
 // Reverse tips (DECISIONS U38) are decided per run and stop once the player has reversed in two runs on this device.
 let reverseTips=reverseTipsWanted(gtxStore),tipCounted=false,firstPlacedAt=-Infinity,dangerIndex=-1,dangerAnnounced=0,wasDoubleBonus=false;
 type Particle={x:number,y:number,vx:number,vy:number,born:number,tint:string};
@@ -171,7 +195,8 @@ function burst(at:Cell,tint:string,label:string,now:number,count=FX.burstParticl
 }
 type Gesture={id:number,slot:number,start:Cell,now:Cell,mode:GestureMode,origin?:Cell};
 let gesture:Gesture|undefined;
-function announce(text:string,tint=color.muted){message=text;messageColor=tint;document.querySelector('#announcement')!.textContent=text;}
+/** Screen readers get `text`; the canvas message line shows `shown` (shorter when `text` is long). */
+function announce(text:string,tint=color.muted,shown=text){message=shown;messageColor=tint;document.querySelector('#announcement')!.textContent=text;}
 function scale(){return BOARD_SIZE/game.settings.grid;}
 function screen(p:Cell):Cell{return {x:BOARD_X+(p.x+.5)*scale(),y:BOARD_Y+(p.y+.5)*scale()};}
 function text(label:string,x:number,y:number,size=13,fill=color.ink,align:CanvasTextAlign='left'){
@@ -229,7 +254,7 @@ canvas.addEventListener('pointerup',event=>{
 });
 canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);window.addEventListener('blur',cancel);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();checkpoint();}});
-function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings,roundSet());runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;roundSurgeAt=-Infinity;lastPickupSeq=0;particles=[];floaters=[];
+function restart(newSettings=settings){checkpoint(game.over?'caught':'restarted');finale.hide();settings={...newSettings};game=new Game(settings,roundSet());runId=newRunId();startedAt=new Date().toISOString();gesture=undefined;drawnRevision=-1;lastTime=performance.now();lastOver=false;removedUntil=0;lastPhase=1;phaseSurgeAt=-Infinity;roundSurgeAt=-Infinity;lastPickupSeq=0;roundNews='';particles=[];floaters=[];
   reverseTips=reverseTipsWanted(gtxStore);tipCounted=false;firstPlacedAt=-Infinity;dangerIndex=-1;dangerAnnounced=0;wasDoubleBonus=false;
   announce(startMessage());}
 document.querySelector('#restart')!.addEventListener('click',()=>restart({...settings,seed:Math.floor(Math.random()*0xffffffff)}));
@@ -288,16 +313,7 @@ function draw(now:number){
     const a=screen(route[i-1]),b=screen(route[i]),dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len;
     const x=a.x+dx*.6,y=a.y+dy*.6;ctx.beginPath();ctx.moveTo(x-ux*4-uy*3,y-uy*4+ux*3);ctx.lineTo(x,y);ctx.lineTo(x-ux*4+uy*3,y-uy*4-ux*3);ctx.stroke();
   }
-  if(game.freezeNode){
-    const c=screen(game.freezeNode),glow=.5+.5*Math.sin(now/220);
-    ctx.save();ctx.shadowColor=color.freeze;ctx.shadowBlur=6+8*glow;ctx.fillStyle=color.freeze;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.4,0,Math.PI*2);ctx.fill();ctx.restore();
-    text('❄',c.x,c.y+.5,Math.max(10,scale()*.58),'#0c1a2e','center');
-  }
-  if(game.boostNode){
-    const c=screen(game.boostNode),glow=.5+.5*Math.sin(now/180);
-    ctx.save();ctx.shadowColor=color.boost;ctx.shadowBlur=6+8*glow;ctx.fillStyle=color.boost;ctx.beginPath();ctx.arc(c.x,c.y,scale()*.4,0,Math.PI*2);ctx.fill();ctx.restore();
-    text('x2',c.x,c.y,Math.max(10,scale()*.5),'#1d1026','center');
-  }
+  for(const [k,kind] of game.powerNodes){const c=screen(cell(k));drawPower(kind,c.x,c.y,scale(),now);}
   const pointTint=game.boosted?color.boost:color.points;
   for(const [k,value] of game.nodes){
     let c=screen(cell(k));const mover=game.movers.get(k);
@@ -328,10 +344,11 @@ function draw(now:number){
   const bloom=(now-roundSurgeAt)/FX.roundSurgeMs;
   if(bloom>=0&&bloom<1){
     const e=1-(1-Math.min(1,bloom*2))**3,goal=game.goal;
-    ctx.save();ctx.globalAlpha=1-bloom;ctx.strokeStyle=color.points;ctx.lineWidth=5*(1-bloom)+1;ctx.shadowColor=color.points;ctx.shadowBlur=24;
+    ctx.save();ctx.globalAlpha=bloom<.6?1:1-(bloom-.6)/.4;ctx.strokeStyle=color.points;ctx.lineWidth=5*(1-bloom)+1;ctx.shadowColor=color.points;ctx.shadowBlur=24;
     ctx.beginPath();ctx.arc(center.x,center.y,Math.max(0,radius*e),0,Math.PI*2);ctx.stroke();
     text(goal===null?game.round.name.toUpperCase():`ROUND ${game.roundIndex+1}`,195,BOARD_Y+BOARD_SIZE/2-12,30,color.points,'center');
     text(goal===null?'NO GOAL · SCORE ALL YOU CAN':`GOAL ${goal} · THE RING SPEEDS UP`,195,BOARD_Y+BOARD_SIZE/2+18,13,color.points,'center');
+    if(roundNews)text(`NEW · ${roundNews}`,195,BOARD_Y+BOARD_SIZE/2+40,12,color.ink,'center');
     ctx.restore();
   }
   const surge=(now-phaseSurgeAt)/FX.phaseSurgeMs;
@@ -351,7 +368,9 @@ function draw(now:number){
   ctx.fillStyle='#080c1099';ctx.beginPath();ctx.ellipse(p.x,p.y+3,7,3,0,0,Math.PI*2);ctx.fill();
   // Fixed ground marker defines collision. Ears and visual bounce are decorative.
   ctx.strokeStyle=game.reverseQueued?color.points:color.ink;ctx.lineWidth=1;ctx.beginPath();ctx.arc(p.x,p.y,game.settings.hitRadius*scale(),0,Math.PI*2);ctx.stroke();
-  ctx.fillStyle=game.over?color.red:game.boosted?color.boost:color.ink;ctx.beginPath();ctx.arc(p.x,p.y-bounce,5,0,Math.PI*2);ctx.fill();
+  // Magnet: a faint ring shows how far he pulls.
+  if(game.magnetActive&&game.round.magnet){ctx.save();ctx.globalAlpha=.35+.15*Math.sin(now/160);ctx.strokeStyle=POWER_LOOK.magnet.tint;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,(game.round.magnet.range+.3)*scale(),0,Math.PI*2);ctx.stroke();ctx.restore();}
+  ctx.fillStyle=game.over?color.red:game.boosted?color.boost:game.sped?POWER_LOOK.speed.tint:color.ink;ctx.beginPath();ctx.arc(p.x,p.y-bounce,5,0,Math.PI*2);ctx.fill();
   ctx.lineWidth=2;ctx.strokeStyle=color.ink;ctx.beginPath();ctx.moveTo(p.x-2,p.y-bounce-3);ctx.lineTo(p.x-3,p.y-bounce-9);ctx.moveTo(p.x+2,p.y-bounce-3);ctx.lineTo(p.x+4,p.y-bounce-9);ctx.stroke();
   drawReverseTip(now,p);
   particles=particles.filter(q=>now-q.born<FX.burstMs);floaters=floaters.filter(f=>now-f.born<FX.burstMs*1.4);
@@ -359,6 +378,16 @@ function draw(now:number){
   for(const f of floaters){const k=(now-f.born)/(FX.burstMs*1.4);ctx.globalAlpha=1-k*k;text(f.label,f.x,f.y-k*26,15+4*(1-k),f.tint,'center');}
   ctx.globalAlpha=1;
   ctx.restore();
+  // Rounds powerups in the board's top corners (outside the Ring's circle): magnet and speed timers, and cherries.
+  if(!game.over){
+    let y=BOARD_Y+12;
+    for(const [kind,left,total] of [['magnet',game.magnetLeft,game.round.magnet?.ms??1],['speed',game.speedLeft,game.round.speed?.ms??1]] as const){
+      if(left<=0)continue;const look=POWER_LOOK[kind];
+      text(`${look.glyph} ${look.name.toUpperCase()} ${game.frozen?'❄':''}${(left/1000).toFixed(1)}s`,BOARD_X+8,y,10,look.tint);roundRect(BOARD_X+8,y+7,56*left/total,3,1.5,look.tint);y+=22;
+    }
+    const cherry=game.round.cherry;
+    if(cherry&&(game.cherries||unlockedKinds(game.round).includes('cherry'))){drawPower('cherry',BOARD_X+BOARD_SIZE-40,BOARD_Y+15,22,now);text(`${game.cherries}/${cherry.set}`,BOARD_X+BOARD_SIZE-8,BOARD_Y+16,11,color.ink,'right');}
+  }
   text('TAP TO ROTATE · DRAG UP · SWIPE DOWN ↓ TO DISCARD',195,469,10,color.muted,'center');
   game.draft.forEach((draft,i)=>{
     const active=gesture?.slot===i,flash=flashSlot===i&&now<flashUntil;
@@ -370,7 +399,9 @@ function draw(now:number){
     }
     text(active&&gesture?.mode==='discard'?(game.running?'DISCARD ↓':'LOCKED'):active&&gesture?.mode==='drag'?'YOUR SLOT':`${draft.shapeId} · ${game.cells(i).length}`,slotX(i),558,11,color.muted,'center');
   });
-  text(message,195,591,11,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
+  // The message line shrinks to fit rather than running off the canvas.
+  ctx.font='400 11px system-ui, sans-serif';const fit=Math.max(8,Math.min(11,11*374/Math.max(1,ctx.measureText(message).width)));
+  text(message,195,591,fit,messageColor,'center');text('CYAN ROUTE · GOLD PTS · VIOLET x2 · BLUE ❄ · TAP HIM = REVERSE',195,613,10,color.muted,'center');
 }
 /** Reverse tips (DECISIONS U38): before the start, for a few seconds after it, and whenever his route is about to
  *  cross the Ring while a reverse can still save him. A ring around him and a callout above him, kept on the board. */
@@ -405,11 +436,26 @@ function frame(now:number){
     lastPickupSeq=pick.seq;
     if(pick.kind==='round'){
       roundSurgeAt=now;phaseSurgeAt=-Infinity;
-      announce(game.goal===null?`Round ${game.roundIndex} clear! ${game.round.name}: no goal, score all you can.`:`Round ${game.roundIndex} clear! Round ${game.roundIndex+1}: score ${game.goal}. The Ring speeds up.`,color.points);
+      // Powerups this round unlocks (DECISIONS U45).
+      const before=unlockedKinds(game.set.rounds[game.roundIndex-1]),fresh=unlockedKinds(game.round).filter(k=>!before.includes(k));
+      roundNews=fresh.length===1?`${POWER_LOOK[fresh[0]].name.toUpperCase()} · ${POWER_LOOK[fresh[0]].about}`:fresh.map(k=>POWER_LOOK[k].name.toUpperCase()).join(' · ');
+      const news=fresh.length?` New: ${fresh.map(k=>`${POWER_LOOK[k].name} (${POWER_LOOK[k].about})`).join(', ')}.`:'';
+      const head=game.goal===null?`Round ${game.roundIndex} clear! ${game.round.name}: no goal, score all you can.`:`Round ${game.roundIndex} clear! Round ${game.roundIndex+1}: score ${game.goal}.`;
+      announce(head+(game.goal===null?'':' The Ring speeds up.')+news,color.points,head+(fresh.length?` New: ${fresh.map(k=>POWER_LOOK[k].name).join(', ')}.`:''));
     }
     else if(pick.kind==='freeze'){burst(pick.at,color.freeze,'FREEZE!',now,20);announce(`The Ring is frozen for ${(game.round.freeze?.ms??0)/1000}s`,color.freeze);}
     else if(pick.kind==='boost'){burst(pick.at,color.boost,'x2!',now,20);announce(`x2 · faster and double points for ${(game.round.boost?.ms??0)/1000}s`,color.boost);}
-    else burst(pick.at,pick.boosted?color.boost:color.points,`+${pick.points}`,now);
+    else if(pick.kind==='point')burst(pick.at,pick.via?POWER_LOOK[pick.via].tint:pick.boosted?color.boost:color.points,`+${pick.points}`,now);
+    else if(pick.kind==='cherry'){
+      const set=game.round.cherry?.set??2,look=POWER_LOOK.cherry;
+      if(pick.points){burst(pick.at,look.tint,`+${pick.points}`,now,24);announce(`Cherries! +${pick.points} points.`,look.tint);}
+      else{burst(pick.at,look.tint,`CHERRY ${game.cherries}/${set}`,now,12);announce(`Cherry ${game.cherries} of ${set}.`,look.tint);}
+    }
+    else{
+      const look=POWER_LOOK[pick.kind],r=game.round;burst(pick.at,look.tint,`${look.name.toUpperCase()}!`,now,20);
+      announce(pick.kind==='expand'?`The Ring is pushed back ${r.expand?.cells??0} cells.`:pick.kind==='sweep'?'Sweep! Every lowest-value node is yours.'
+        :pick.kind==='magnet'?`Magnet: he grabs points within ${r.magnet?.range??0} cells for ${(r.magnet?.ms??0)/1000}s.`:`Speed: faster hops for ${(r.speed?.ms??0)/1000}s. No bonus.`,look.tint);
+    }
   }
   // After the pickups, so this announcement wins when the freeze or x2 that starts it was just collected.
   if(game.doubleBonus&&!wasDoubleBonus){burst(game.position,color.boost,'DOUBLE BONUS!',now,24);announce('Double bonus! x2 waits while the Ring is frozen.',color.boost);}

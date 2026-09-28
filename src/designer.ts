@@ -1,11 +1,14 @@
 // Round designer (docs/DECISIONS.md U44): edit the round set that the Rounds trial plays, see the Ring across the whole
 // run, and play it, export it or share it. Every set that leaves this page goes through parseRoundSet, like any set
 // from outside. Plays are unranked. Nothing here changes Classic.
-import {BUILTIN_ROUNDS,CUSTOM_ROUNDS_KEY,NODE_VALUES,parseRoundSet,encodeRoundSet,decodeRoundSet,ringTimeline,roundPhaseAt,type Round,type RoundSet} from './rounds.js';
+import {BUILTIN_ROUNDS,CUSTOM_ROUNDS_KEY,NODE_VALUES,POWER_KINDS,parseRoundSet,encodeRoundSet,decodeRoundSet,ringTimeline,roundPhaseAt,unlockedKinds,type PowerKind,type Round,type RoundSet} from './rounds.js';
 import {DEFAULTS} from './game.js';
 import './designer.css';
 
 const GRID=DEFAULTS.grid,FULL=GRID/2-.25,MAX_ROUNDS=12;
+const KIND_LABELS:Record<PowerKind,{name:string,about:string}>={boost:{name:'x2',about:'double points, faster hops'},freeze:{name:'❄ Freeze',about:'time stops'},
+  expand:{name:'↔ Expand',about:'pushes the Ring back'},sweep:{name:'✦ Sweep',about:'takes every lowest-value node'},magnet:{name:'U Magnet',about:'he grabs points near him'},
+  speed:{name:'» Speed',about:'faster hops, no bonus'},cherry:{name:'Cherries',about:'a set pays bonus points'}};
 const root=document.querySelector<HTMLDivElement>('#designer')!;
 const clone=<T,>(v:T):T=>JSON.parse(JSON.stringify(v));
 const fresh=():RoundSet=>({...clone(BUILTIN_ROUNDS),id:'custom',name:'My rounds'});
@@ -99,7 +102,7 @@ function drawChart(){
   // Table view: the same numbers without hovering.
   const body=root.querySelector('#summary tbody')!;body.replaceChildren();start=0;
   set.rounds.forEach((r,i)=>{
-    const kinds=[r.boost&&(r.spawner?.weights.boost??0)>0?'x2':'',r.freeze&&(r.spawner?.weights.freeze??0)>0?'freeze':''].filter(Boolean).join(', ')||'none';
+    const kinds=unlockedKinds(r).filter(k=>k==='sweep'||r[k]).map(k=>KIND_LABELS[k].name).join(', ')||'none';
     body.append(el('tr',{},...[`${i+1}. ${r.name}`,clock(start),`${r.duration} s`,r.goal===null?'none':String(r.goal),`${r.hopMs} ms`,String(r.nodeCount),kinds].map(v=>el('td',{textContent:v}))));
     start+=r.duration;
   });
@@ -165,20 +168,35 @@ function roundCard(r:Round,i:number){
   // Powerups, all through one spawner.
   r.spawner??={firstMs:8000,everyMs:12000,max:2,weights:{}};
   const sp=r.spawner;
-  const kind=(label:string,key:'boost'|'freeze',extra:()=>HTMLElement[])=>{
-    const on=el('input',{type:'checkbox',checked:!!r[key]&&(sp.weights[key]??0)>0});
+  // Each kind: on/off (its spawner weight), its weight, and its own settings. Turning one on gives it default settings.
+  const DEFAULT_EFFECTS={boost:{firstMs:0,respawnMs:0,ms:7000,speed:1.4},freeze:{firstMs:0,respawnMs:0,ms:6000},expand:{cells:1.5},
+    magnet:{ms:6000,range:2},speed:{ms:5000,speed:1.8},cherry:{set:2,bonus:10}};
+  type Tunable=Exclude<PowerKind,'sweep'>;
+  const params=(key:PowerKind):HTMLElement[]=>{
+    const e=r as Record<string,any>,o=key==='sweep'?null:e[key];
+    const secs=(label:string)=>numberBox(label,o.ms/1000,.5,30,.5,v=>{o.ms=v*1000;});
+    return key==='boost'?[secs('Lasts (s)'),numberBox('Speed ×',o.speed,1,3,.1,v=>{o.speed=v;})]
+      :key==='freeze'?[secs('Lasts (s)')]
+      :key==='expand'?[numberBox('Pushes back (cells)',o.cells,.25,5,.25,v=>{o.cells=v;})]
+      :key==='magnet'?[secs('Lasts (s)'),numberBox('Reach (cells)',o.range,1,4,.5,v=>{o.range=v;})]
+      :key==='speed'?[secs('Lasts (s)'),numberBox('Speed ×',o.speed,1,3,.1,v=>{o.speed=v;})]
+      :key==='cherry'?[numberBox('Set of',o.set,1,5,1,v=>{o.set=v;}),numberBox('Bonus',o.bonus,1,100,1,v=>{o.bonus=v;})]:[];
+  };
+  const kind=(key:PowerKind)=>{
+    const has=key==='sweep'||!!r[key as Tunable],on=el('input',{type:'checkbox',checked:has&&(sp.weights[key]??0)>0});
     on.addEventListener('change',()=>{
-      if(on.checked){if(key==='boost')r.boost??={firstMs:0,respawnMs:0,ms:7000,speed:1.4};else r.freeze??={firstMs:0,respawnMs:0,ms:6000};if(!(sp.weights[key]??0))sp.weights[key]=1;}
+      if(on.checked){if(key!=='sweep')(r as Record<string,unknown>)[key]??=clone(DEFAULT_EFFECTS[key as Tunable]);if(!(sp.weights[key]??0))sp.weights[key]=1;}
       else sp.weights[key]=0;
       changed();rebuild();
     });
-    const body=on.checked?extra():[];
-    return el('div',{className:'kind'},el('label',{className:'check'},on,` ${label}`),...body);
+    const look=KIND_LABELS[key];
+    return el('div',{className:'kind'},el('label',{className:'check'},on,` ${look.name}`,el('small',{className:'hint',textContent:` · ${look.about}`})),
+      ...(on.checked?[el('div',{className:'row'},numberBox('Weight',sp.weights[key]??1,0,100,1,v=>{sp.weights[key]=v;}),...params(key))]:[]));
   };
   const power=el('details',{className:'group'},el('summary',{textContent:'Powerups'}),
+    el('p',{className:'hint',textContent:'One spawner places them: the first after "First", then a try every "Every", picking by weight among the ones switched on (never one already on the board or running).'}),
     el('div',{className:'row'},numberBox('First (s)',sp.firstMs/1000,0,300,1,v=>{sp.firstMs=v*1000;}),numberBox('Every (s)',sp.everyMs/1000,1,300,1,v=>{sp.everyMs=v*1000;}),numberBox('Most at once',sp.max,1,4,1,v=>{sp.max=v;})),
-    kind('x2 (double points, faster)','boost',()=>[el('div',{className:'row'},numberBox('Weight',sp.weights.boost??1,0,100,1,v=>{sp.weights.boost=v;}),numberBox('Lasts (s)',r.boost!.ms/1000,.5,30,.5,v=>{r.boost!.ms=v*1000;}),numberBox('Speed ×',r.boost!.speed,1,3,.1,v=>{r.boost!.speed=v;}))]),
-    kind('❄ Freeze (time stops)','freeze',()=>[el('div',{className:'row'},numberBox('Weight',sp.weights.freeze??1,0,100,1,v=>{sp.weights.freeze=v;}),numberBox('Lasts (s)',r.freeze!.ms/1000,.5,30,.5,v=>{r.freeze!.ms=v*1000;}))]));
+    ...POWER_KINDS.map(kind));
   card.append(phases,power);
   return card;
 }
