@@ -93,6 +93,8 @@ test('the built-in Rounds as Tyler tuned them: goals 30, 45, 60 and a Midnight f
   assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>Object.keys(r.spawner.weights).filter(k=>r.spawner.weights[k]>0)),
     [['boost','freeze'],['boost','freeze','sweep'],['boost','freeze','sweep','magnet'],['boost','freeze','cherry','sweep','magnet','speed','expand']]);
   assert.deepEqual(set.rounds.map(r=>r.goal),[30,45,60,null],'parsing keeps the set as it is');
+  // U50: each round paces its own Ring (phase speeds relative to the first), rescaled so it still closes on time.
+  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>r.phases.map(p=>+(p.speed/r.phases[0].speed).toFixed(4))),[[1,1.25,1.9375],[1,1.3,1.7],[1,1.2308,1.6923],[1,1,1.3]]);
   for(const r of BUILTIN_ROUNDS.rounds)assert.ok(Math.abs(r.phases.reduce((a,p)=>a+p.fraction*p.speed,0)-1)<1e-12);
   const line=ringTimeline(BUILTIN_ROUNDS,19);assert.equal(line[0][1],FULL);assert.equal(line.at(-1)[0],d.reduce((a,b)=>a+b,0));
   const starts=line.filter((p,i)=>i>0&&p[2]!==line[i-1][2]);assert.equal(starts.length,3);for(const p of starts)assert.equal(p[1],FULL);

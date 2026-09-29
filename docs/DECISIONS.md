@@ -240,6 +240,7 @@ Source: Tyler's issues #7 (reverse tip), #8 (x2 + freeze), #9 (new powerups), #1
 | U45 | New powerups after Rounds, unlocked by round through one spawner: Magnet (he collects points near him), Speed (its own powerup, no scoring bonus), Cherries (a set pays bonus points), Sweep (collects the lowest value on the board), Expand (pushes the Ring out a fixed distance; it may return to an earlier phase). |
 | U48 | (After playing Rounds.) Clearing a round is a full reset, like a new level in Pac-Man: the board clears, and nodes left on it are not scored. Then a whole new level starts. Supersedes U43's "point nodes are replaced" (everything is now) and the carry-over in P7-10. |
 | U49 | (Tyler tuned the rounds in the designer.) Built-in set: Round 1 goal 30, 90 s, 8 nodes, x2 and freeze (freeze 7 s); Round 2 goal 45, 90 s, adds sweep; Round 3 goal 60, 80 s, adds magnet; Midnight unchanged (no goal, 60 s, adds cherries, speed and expand). Hops, value weights and spawner timing are as before. Supersedes the numbers and unlocks in P7-09 and P7-14. |
+| U50 | (Tyler's second designer pass.) Each built-in round paces its own Ring more evenly than Classic's 0.5 / 0.875 / 2: Round 1 0.8 / 1 / 1.55, Round 2 1 / 1.3 / 1.7, Round 3 0.65 / 0.8 / 1.1, Midnight 1 / 1 / 1.3 (relative speeds per phase, rescaled so each Ring still closes at its round's length). Phase 3 is still the fastest, but the last surge is gentler. Everything else is as in U49. |
 
 ### Agent calls for review
 
