@@ -21,7 +21,7 @@ app.innerHTML=`<main class="game-shell">
     </section></div>
   <div id="announcement" class="sr-only" aria-live="polite"></div>
   <dialog id="settings"><form method="dialog"><h2>Playtest tuning</h2><p>Changes start a new run. Opening this panel does not pause an active run.</p>
-    <label>Mode<select id="mode"><option value="classic">Classic · ranked</option><option value="rounds">Rounds · trial, not ranked</option></select></label>
+    <label>Mode<select id="mode"><option value="rounds">Rounds · default, not ranked</option><option value="classic">Classic · ranked</option></select></label>
     <p id="rounds-help" hidden>Each round sets its own Ring length, hop speed, nodes and powerups, so those settings are greyed out. <a href="./designer.html">Design rounds…</a></p>
     <label>Run length<select id="duration"><option value="60">1 minute</option><option value="120">2 minutes</option><option value="180">3 minutes</option></select></label>
     <label>Board size<select id="grid"><option value="15">15 × 15</option><option value="19">19 × 19</option><option value="23">23 × 23</option></select></label>
@@ -46,10 +46,10 @@ const input=(id:string)=>document.getElementById(id) as HTMLInputElement;
 const query=new URLSearchParams(location.search);
 const numeric=(name:string,fallback:number)=>{const value=Number(query.get(name));return query.has(name)&&Number.isFinite(value)?value:fallback;};
 let settings:Settings={...DEFAULTS,duration:numeric('duration',180),grid:numeric('grid',19),hopMs:numeric('hop',450),nodeCount:numeric('nodes',DEFAULTS.nodeCount),slots:numeric('slots',DEFAULTS.slots),seed:numeric('seed',Math.floor(Math.random()*0xffffffff)),roadLimit:numeric('limit',25),hitRadius:numeric('hit',.10),boostSpeed:numeric('boost',DEFAULTS.boostSpeed),boostMs:numeric('boostSec',DEFAULTS.boostMs/1000)*1000,freezeMs:numeric('freezeSec',DEFAULTS.freezeMs/1000)*1000};
-// Mode (DECISIONS U43): Classic is ranked; Rounds is an unranked trial playing the built-in set, or the designer's with
-// ?mode=rounds&set=custom. Mode lives outside Settings, so the ranked settings never change.
+// Rounds is the default game. Classic remains available explicitly with ?mode=classic or from Tune.
+// The designer can still launch a custom set with ?mode=rounds&set=custom.
 type Mode='classic'|'rounds';
-let mode:Mode=query.get('mode')==='rounds'?'rounds':'classic',roundsNote='';
+let mode:Mode=query.get('mode')==='classic'?'classic':'rounds',roundsNote='';
 const useCustom=query.get('set')==='custom';
 function roundSet():RoundSet|undefined{
   if(mode==='classic')return undefined;
@@ -137,7 +137,7 @@ async function finishRun(){
     round:rounds?(last?`${game.round.name} · final round`:`Round ${report.round} of ${report.roundsTotal}`):undefined});
   // Rounds is unranked, but its runs still have a best on this device to beat.
   let board=localBoard(reports(),id,RUN_BUILD,DEFAULTS,rounds?report.roundSet?.id:undefined),
-    note=rounds?'Rounds is a trial, so it isn’t on the leaderboard yet.':!ranked?'Only runs with default settings are ranked.':token?'':'Launch Jerboa from gametronyx.com to get on the leaderboard.';
+    note=rounds?'Rounds isn’t on the leaderboard yet.':!ranked?'Only runs with default settings are ranked.':token?'':'Launch Jerboa from gametronyx.com to get on the leaderboard.';
   if(ranked&&token){
     const run=scoreRun(report,BUILD),result=await submitScore(fetch,SCORES_API,token,run);
     if(result.ok){board=result.board;void flushPending(fetch,SCORES_API,token,gtxStore);}
