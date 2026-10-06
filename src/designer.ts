@@ -28,7 +28,7 @@ function loadSet():{set:RoundSet,note:string}{
 let {set,note:startNote}=loadSet();
 
 root.innerHTML=`<header class="top"><a class="back" href="./index.html">‹ Back to the game</a>
-  <h1>Round designer</h1><p class="lede">Build the rounds for the Rounds trial: each round's goal, Ring, hop speed, nodes and powerups. <b>Play</b> runs your set on this device. Rounds runs aren't ranked.</p></header>
+  <h1>Round designer</h1><p class="lede">Build the rounds for Rounds mode: each round's goal, Ring, hop speed, nodes and powerups. <b>Play</b> runs your set on this device. Rounds runs aren't ranked.</p></header>
   <label class="set-name">Set name<input id="set-name" maxlength="40"></label>
   <div class="actions"><button id="play" class="primary" type="button">Play these rounds</button><button id="share" type="button">Copy share link</button><button id="export" type="button">Export JSON</button><label class="button" for="import">Import JSON</label><input id="import" type="file" accept="application/json,.json" hidden><button id="reset" type="button">Reset to built-in</button></div>
   <p id="status" class="status" role="status" aria-live="polite"></p><input id="share-url" class="share-url" readonly hidden aria-label="Share link">
