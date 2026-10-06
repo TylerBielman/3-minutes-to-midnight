@@ -58,7 +58,7 @@ test('Rounds reports carry the mode and never rank; the device boards keep Class
   const classic=new Game({seed:2}),rounds=new Game({seed:2},BUILTIN_ROUNDS),custom=new Game({seed:2},{...testSet(),id:'custom'});
   const c=runReport(classic,'c','2026-09-28T10:00:00Z','caught'),r=runReport(rounds,'r','2026-09-28T10:01:00Z','caught'),u=runReport(custom,'u','2026-09-28T10:02:00Z','caught');
   assert.deepEqual([c.mode,c.round,c.roundsTotal,c.roundsCleared,c.roundSet],['classic',1,1,0,null]);
-  assert.deepEqual([r.mode,r.round,r.roundsTotal,r.roundSet.id,r.roundSet.rounds],['rounds',1,4,'rounds',undefined]);
+  assert.deepEqual([r.mode,r.round,r.roundsTotal,r.roundSet.id,r.roundSet.rounds],['rounds',1,6,'rounds',undefined]);
   assert.equal(u.roundSet.rounds.length,3,'a custom set is kept whole');
   assert.equal(isRankedReport(c,DEFAULTS),true);assert.equal(isRankedReport(r,DEFAULTS),false);assert.equal(isRankedReport({settings:DEFAULTS},DEFAULTS),true,'older reports are Classic');
   c.score=10;r.score=50;
@@ -82,22 +82,23 @@ test('Rounds play the same for the same seed',()=>{
     for(let i=0;i<400&&!g.over;i++)g.advance(i%7===0?250:16);return JSON.stringify([g.score,g.roundIndex,g.ringTotalMs,[...g.nodes].sort(),g.events]);};
   assert.equal(run(),run());
 });
-test('the built-in Rounds as Tyler tuned them: goals 30, 45, 60 and a Midnight finale; the timeline restarts each round',()=>{
+test('the built-in Rounds use Tyler’s October 2026 six-round tuning and the timeline restarts each round',()=>{
   const set=parseRoundSet(BUILTIN_ROUNDS);assert.ok(set);assert.equal(BUILTIN_ROUNDS.rounds.at(-1).name,'Midnight');
-  const d=BUILTIN_ROUNDS.rounds.map(r=>r.duration),h=BUILTIN_ROUNDS.rounds.map(r=>r.hopMs);
-  // DECISIONS U49: Tyler's designer set.
+  const d=BUILTIN_ROUNDS.rounds.map(r=>r.duration);
   assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>[r.goal,r.duration,r.hopMs,r.nodeCount,r.openingFives,r.boost.ms,r.freeze.ms]),
-    [[30,90,450,8,2,7000,7000],[45,90,420,10,1,7000,6000],[60,80,390,10,1,7000,6000],[null,60,360,10,2,7000,6000]]);
-  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>[r.spawner.firstMs,r.spawner.everyMs]),[[8000,12000],[6000,11000],[5000,10000],[4000,8000]]);
-  // Powerups unlock round by round (U45).
+    [[30,90,450,8,2,7000,7000],[45,75,420,10,1,7000,6000],[60,65,390,10,1,7000,6000],
+     [80,60,360,10,2,7000,6000],[80,60,360,10,2,7000,6000],[null,45,360,10,2,7000,6000]]);
+  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>[r.spawner.firstMs,r.spawner.everyMs]),
+    [[8000,12000],[6000,11000],[5000,10000],[4000,8000],[4000,8000],[4000,8000]]);
   assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>Object.keys(r.spawner.weights).filter(k=>r.spawner.weights[k]>0)),
-    [['boost','freeze'],['boost','freeze','sweep'],['boost','freeze','sweep','magnet'],['boost','freeze','cherry','sweep','magnet','speed','expand']]);
-  assert.deepEqual(set.rounds.map(r=>r.goal),[30,45,60,null],'parsing keeps the set as it is');
-  // U50: each round paces its own Ring (phase speeds relative to the first), rescaled so it still closes on time.
-  assert.deepEqual(BUILTIN_ROUNDS.rounds.map(r=>r.phases.map(p=>+(p.speed/r.phases[0].speed).toFixed(4))),[[1,1.25,1.9375],[1,1.3,1.7],[1,1.2308,1.6923],[1,1,1.3]]);
+    [['boost','freeze'],['boost','freeze','expand'],['boost','freeze','expand','sweep'],
+     ['boost','freeze','expand','sweep','magnet'],['boost','freeze','expand','sweep','magnet','speed'],
+     ['boost','freeze','expand','sweep','magnet','speed','cherry']]);
+  assert.deepEqual(set.rounds.map(r=>r.goal),[30,45,60,80,80,null],'parsing keeps the set as it is');
+  assert.equal(BUILTIN_ROUNDS.rounds.at(-1).cherry.bonus,20);
   for(const r of BUILTIN_ROUNDS.rounds)assert.ok(Math.abs(r.phases.reduce((a,p)=>a+p.fraction*p.speed,0)-1)<1e-12);
   const line=ringTimeline(BUILTIN_ROUNDS,19);assert.equal(line[0][1],FULL);assert.equal(line.at(-1)[0],d.reduce((a,b)=>a+b,0));
-  const starts=line.filter((p,i)=>i>0&&p[2]!==line[i-1][2]);assert.equal(starts.length,3);for(const p of starts)assert.equal(p[1],FULL);
+  const starts=line.filter((p,i)=>i>0&&p[2]!==line[i-1][2]);assert.equal(starts.length,5);for(const p of starts)assert.equal(p[1],FULL);
 });
 test('share links carry a set through base64url and come back validated',async()=>{
   const {encodeRoundSet,decodeRoundSet}=await import('../.test-build/rounds.js');
